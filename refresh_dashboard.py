@@ -26,6 +26,8 @@ def load_meta_daily():
                  "cost_per_action_type_lead", "cost_per_action_type_complete_registration"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    # Combine both conversion events: older campaigns used complete_registration, newer use lead
+    df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
     return df
 
 
@@ -38,6 +40,7 @@ def load_meta_country():
     for col in ["spend", "clicks", "impressions", "actions_lead", "actions_complete_registration"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
     return df
 
 
@@ -50,6 +53,7 @@ def load_meta_creative():
     for col in ["spend", "clicks", "link_clicks", "actions_lead", "actions_complete_registration"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
     return df
 
 
@@ -90,7 +94,7 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
         clicks=("clicks", "sum"),
         link_clicks=("link_clicks", "sum"),
         impressions=("impressions", "sum"),
-        meta_leads=("actions_complete_registration", "sum"),
+        meta_leads=("meta_conversions", "sum"),
     ).reset_index()
 
     sf_agg = sf_df.groupby("period").agg(
@@ -122,7 +126,7 @@ def build_campaign_table(meta_df, sf_df):
         clicks=("clicks", "sum"),
         link_clicks=("link_clicks", "sum"),
         impressions=("impressions", "sum"),
-        meta_leads=("actions_complete_registration", "sum"),
+        meta_leads=("meta_conversions", "sum"),
     ).reset_index()
 
     sf_camp = sf_df.groupby("campaign").agg(
@@ -144,7 +148,7 @@ def build_creative_table(creative_df, sf_df):
         spend=("spend", "sum"),
         clicks=("clicks", "sum"),
         link_clicks=("link_clicks", "sum"),
-        meta_leads=("actions_complete_registration", "sum"),
+        meta_leads=("meta_conversions", "sum"),
     ).reset_index()
 
     sf_content = sf_df.groupby("ad_content").agg(
@@ -163,7 +167,7 @@ def build_country_table(country_df):
         spend=("spend", "sum"),
         clicks=("clicks", "sum"),
         impressions=("impressions", "sum"),
-        meta_leads=("actions_complete_registration", "sum"),
+        meta_leads=("meta_conversions", "sum"),
     ).reset_index()
     country_agg["cpc"] = (country_agg["spend"] / country_agg["clicks"].replace(0, float("nan"))).round(2)
     country_agg["meta_cpl"] = (country_agg["spend"] / country_agg["meta_leads"].replace(0, float("nan"))).round(2)
@@ -193,7 +197,7 @@ def compute_kpis(meta_df, sf_df):
     total_spend = meta_df["spend"].sum()
     total_clicks = meta_df["clicks"].sum()
     total_impressions = meta_df["impressions"].sum()
-    total_meta_leads = meta_df["actions_complete_registration"].sum()
+    total_meta_leads = meta_df["meta_conversions"].sum()
     total_sf_leads = len(sf_df)
     true_cpl = round(total_spend / total_sf_leads, 2) if total_sf_leads > 0 else 0
     meta_cpl = round(total_spend / total_meta_leads, 2) if total_meta_leads > 0 else 0

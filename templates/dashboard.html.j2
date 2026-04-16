@@ -50,6 +50,7 @@
         .filter-group input[type="date"] { padding: 5px 8px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 13px; }
         .preset-btn { padding: 5px 12px; border: 1px solid #dee2e6; border-radius: 4px; background: white; cursor: pointer; font-size: 12px; font-weight: 500; }
         .preset-btn:hover { background: #f0f0f0; }
+        .preset-btn.active { background: var(--color-1); color: white; border-color: var(--color-1); }
         .view-toggle { display: flex; border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden; }
         .view-btn { padding: 5px 14px; border: none; background: white; cursor: pointer; font-size: 12px; font-weight: 500; border-right: 1px solid #dee2e6; }
         .view-btn:last-child { border-right: none; }
@@ -135,10 +136,10 @@
                 <label>To:</label>
                 <input type="date" id="dateTo" onchange="dashboard.applyFilters()">
             </div>
-            <button class="preset-btn" onclick="dashboard.setPreset('6m')">6M</button>
-            <button class="preset-btn" onclick="dashboard.setPreset('3m')">3M</button>
-            <button class="preset-btn" onclick="dashboard.setPreset('1m')">1M</button>
-            <button class="preset-btn" onclick="dashboard.setPreset('all')">All</button>
+            <button class="preset-btn" data-preset="6m" onclick="dashboard.setPreset('6m',this)">6M</button>
+            <button class="preset-btn" data-preset="3m" onclick="dashboard.setPreset('3m',this)">3M</button>
+            <button class="preset-btn" data-preset="1m" onclick="dashboard.setPreset('1m',this)">1M</button>
+            <button class="preset-btn" data-preset="all" onclick="dashboard.setPreset('all',this)">All</button>
         </div>
         <div class="view-toggle">
             <button class="view-btn" onclick="dashboard.setView('D', this)">Daily</button>
@@ -253,7 +254,7 @@ class Dashboard {
         this.setPreset('6m');
     }
 
-    setPreset(p) {
+    setPreset(p, btn) {
         const end = new Date(this.raw.date_max);
         let start;
         if (p === '1m') start = new Date(end.getFullYear(), end.getMonth() - 1, end.getDate());
@@ -262,6 +263,9 @@ class Dashboard {
         else start = new Date(this.raw.date_min);
         document.getElementById('dateFrom').value = start.toISOString().split('T')[0];
         document.getElementById('dateTo').value = this.raw.date_max;
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        else document.querySelector('[data-preset="'+p+'"]')?.classList.add('active');
         this.applyFilters();
     }
 
