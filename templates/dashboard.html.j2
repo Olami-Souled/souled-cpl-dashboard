@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Souled Meta Ads CPL Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --success: #2ec4b6;
+            --warning: #ff9f1c;
+            --danger: #e71d36;
+            --dark: #1a1a2e;
+            --light-bg: #f8f9fa;
+            --card-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        body { background: var(--light-bg); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #333; }
+        .sticky-controls { position: sticky; top: 0; z-index: 100; background: white; padding: 12px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .kpi-card { background: white; border-radius: 12px; padding: 20px; box-shadow: var(--card-shadow); text-align: center; transition: transform 0.2s; }
+        .kpi-card:hover { transform: translateY(-2px); }
+        .kpi-value { font-size: 2rem; font-weight: 700; margin: 8px 0 4px; }
+        .kpi-label { font-size: 0.85rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-sub { font-size: 0.8rem; color: #999; }
+        .section-card { background: white; border-radius: 12px; padding: 24px; box-shadow: var(--card-shadow); margin-bottom: 24px; }
+        .section-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 16px; color: var(--dark); }
+        .chart-container { width: 100%; min-height: 350px; }
+        .view-toggle .btn { padding: 6px 16px; font-size: 0.85rem; }
+        .view-toggle .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .cpl-good { color: var(--success); font-weight: 600; }
+        .cpl-mid { color: var(--warning); font-weight: 600; }
+        .cpl-bad { color: var(--danger); font-weight: 600; }
+        .funnel-bar { height: 36px; border-radius: 6px; margin: 6px 0; display: flex; align-items: center; padding: 0 12px; color: white; font-weight: 500; font-size: 0.9rem; transition: width 0.5s ease; }
+        .brand-header { background: linear-gradient(135deg, var(--dark) 0%, #16213e 100%); color: white; padding: 20px 0; }
+        .brand-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0; }
+        .brand-header .subtitle { font-size: 0.9rem; opacity: 0.7; }
+        table.dataTable tbody td { font-size: 0.9rem; }
+        table.dataTable thead th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.3px; }
+        .date-inputs { display: flex; gap: 8px; align-items: center; }
+        .date-inputs input { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.85rem; }
+        .last-updated { font-size: 0.8rem; color: #999; }
+        @media (max-width: 768px) {
+            .kpi-value { font-size: 1.4rem; }
+            .kpi-card { padding: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="brand-header">
+    <div class="container-fluid px-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1><i class="bi bi-graph-up-arrow me-2"></i>Souled Meta Ads CPL Dashboard</h1>
+                <div class="subtitle">Paid Acquisition Performance — Meta (Facebook & Instagram)</div>
+            </div>
+            <div class="last-updated text-end">
+                <div>Data as of <span id="lastUpdated"></span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sticky Controls -->
+<div class="sticky-controls">
+    <div class="container-fluid px-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="date-inputs">
+                <label class="form-label mb-0 me-1" style="font-size:0.85rem;font-weight:500;">From:</label>
+                <input type="date" id="dateFrom" onchange="applyFilters()">
+                <label class="form-label mb-0 me-1 ms-2" style="font-size:0.85rem;font-weight:500;">To:</label>
+                <input type="date" id="dateTo" onchange="applyFilters()">
+                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="setPreset('6m')">6M</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setPreset('3m')">3M</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setPreset('1m')">1M</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="setPreset('all')">All</button>
+            </div>
+            <div class="view-toggle btn-group" role="group">
+                <button class="btn btn-outline-secondary" onclick="setView('D')">Daily</button>
+                <button class="btn btn-outline-secondary active" onclick="setView('W')">Weekly</button>
+                <button class="btn btn-outline-secondary" onclick="setView('M')">Monthly</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid px-4 py-4">
+
+    <!-- Section 1: KPI Cards -->
+    <div class="row g-3 mb-4" id="kpiCards">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="kpi-card">
+                <div class="kpi-label">Total Spend</div>
+                <div class="kpi-value" id="kpi-spend" style="color:var(--primary)">$0</div>
+                <div class="kpi-sub" id="kpi-spend-sub"></div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="kpi-card">
+                <div class="kpi-label">SF Leads</div>
+                <div class="kpi-value" id="kpi-sf-leads" style="color:var(--success)">0</div>
+                <div class="kpi-sub">Salesforce Registrations</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="kpi-card">
+                <div class="kpi-label">True CPL</div>
+                <div class="kpi-value" id="kpi-cpl">$0</div>
+                <div class="kpi-sub">Spend / SF Leads</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="kpi-card">
+                <div class="kpi-label">Meta Leads</div>
+                <div class="kpi-value" id="kpi-meta-leads" style="color:#666">0</div>
+                <div class="kpi-sub">Meta-Reported</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="kpi-card">
+                <div class="kpi-label">Lead Gap</div>
+                <div class="kpi-value" id="kpi-gap" style="color:var(--warning)">0%</div>
+                <div class="kpi-sub">Meta vs SF Difference</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="kpi-card">
+                <div class="kpi-label">Coach Match Rate</div>
+                <div class="kpi-value" id="kpi-coach" style="color:var(--success)">0%</div>
+                <div class="kpi-sub">Ever Matched to Coach</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Trend Charts -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-graph-up me-2"></i>Performance Trends</div>
+        <div class="row">
+            <div class="col-lg-6">
+                <div id="chartSpendCPL" class="chart-container"></div>
+            </div>
+            <div class="col-lg-6">
+                <div id="chartLeadGap" class="chart-container"></div>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-12">
+                <div id="chartConvRate" class="chart-container" style="min-height:280px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: Summary Table -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-table me-2"></i>Period Summary</div>
+        <div class="table-responsive">
+            <table id="summaryTable" class="table table-striped table-hover" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Period</th>
+                        <th>Spend</th>
+                        <th>Clicks</th>
+                        <th>CPC</th>
+                        <th>CTR %</th>
+                        <th>Meta Leads</th>
+                        <th>SF Leads</th>
+                        <th>Lead Gap</th>
+                        <th>True CPL</th>
+                        <th>Conv Rate %</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryBody"></tbody>
+                <tfoot>
+                    <tr style="font-weight:700;background:#f0f0f0;">
+                        <td>TOTAL</td>
+                        <td id="sumSpend"></td>
+                        <td id="sumClicks"></td>
+                        <td id="sumCPC"></td>
+                        <td id="sumCTR"></td>
+                        <td id="sumMetaLeads"></td>
+                        <td id="sumSFLeads"></td>
+                        <td id="sumGap"></td>
+                        <td id="sumCPL"></td>
+                        <td id="sumConv"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 4: Campaign Performance -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-megaphone me-2"></i>Campaign Performance</div>
+        <div class="table-responsive">
+            <table id="campaignTable" class="table table-striped table-hover" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Campaign</th>
+                        <th>Spend</th>
+                        <th>Clicks</th>
+                        <th>CPC</th>
+                        <th>CTR %</th>
+                        <th>Meta Leads</th>
+                        <th>SF Leads</th>
+                        <th>True CPL</th>
+                        <th>Conv Rate %</th>
+                    </tr>
+                </thead>
+                <tbody id="campaignBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 5: Ad Creative Performance -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-brush me-2"></i>Ad Creative Performance</div>
+        <div class="table-responsive">
+            <table id="creativeTable" class="table table-striped table-hover" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Ad Name</th>
+                        <th>Campaign</th>
+                        <th>Spend</th>
+                        <th>Clicks</th>
+                        <th>Meta Leads</th>
+                        <th>SF Leads</th>
+                        <th>True CPL</th>
+                    </tr>
+                </thead>
+                <tbody id="creativeBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Section 6: Lead Reconciliation -->
+    <div class="section-card">
+        <div class="section-title"><i class="bi bi-arrow-left-right me-2"></i>Lead Reconciliation (Meta vs Salesforce)</div>
+        <p class="text-muted" style="font-size:0.85rem;">Meta over-reports leads due to CAPI deduplication issues. True lead count comes from Salesforce Registration records.</p>
+        <div id="chartReconciliation" class="chart-container"></div>
+    </div>
+
+    <!-- Section 7: Geographic + Funnel -->
+    <div class="row">
+        <div class="col-lg-7">
+            <div class="section-card">
+                <div class="section-title"><i class="bi bi-globe me-2"></i>Geographic Breakdown</div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div id="chartCountry" class="chart-container" style="min-height:300px;"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="table-responsive">
+                            <table id="countryTable" class="table table-sm table-striped" style="width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>Country</th>
+                                        <th>Spend</th>
+                                        <th>Clicks</th>
+                                        <th>Meta Leads</th>
+                                        <th>CPC</th>
+                                        <th>Meta CPL</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="countryBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="section-card">
+                <div class="section-title"><i class="bi bi-funnel me-2"></i>Lead Status Funnel</div>
+                <div id="funnelContainer"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+
+<script>
+// Embedded data
+const RAW_DATA = {{ data }};
+let currentView = 'W';
+let currentData = null;
+const plotlyConfig = {responsive: true, displayModeBar: false};
+const plotlyLayout = {
+    margin: {t: 40, r: 40, b: 40, l: 60},
+    font: {family: 'Segoe UI, system-ui, sans-serif', size: 12},
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+};
+
+function init() {
+    currentData = RAW_DATA;
+    document.getElementById('lastUpdated').textContent = currentData.generated_at;
+    document.getElementById('dateFrom').value = currentData.date_min;
+    document.getElementById('dateTo').value = currentData.date_max;
+
+    // Default to last 6 months
+    setPreset('6m');
+}
+
+function setPreset(preset) {
+    const end = new Date(currentData.date_max);
+    let start;
+    if (preset === '1m') start = new Date(end.getFullYear(), end.getMonth() - 1, end.getDate());
+    else if (preset === '3m') start = new Date(end.getFullYear(), end.getMonth() - 3, end.getDate());
+    else if (preset === '6m') start = new Date(end.getFullYear(), end.getMonth() - 6, end.getDate());
+    else start = new Date(currentData.date_min);
+
+    document.getElementById('dateFrom').value = start.toISOString().split('T')[0];
+    document.getElementById('dateTo').value = currentData.date_max;
+    applyFilters();
+}
+
+function setView(view) {
+    currentView = view;
+    document.querySelectorAll('.view-toggle .btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    applyFilters();
+}
+
+function getViewData() {
+    if (currentView === 'D') return currentData.daily;
+    if (currentView === 'M') return currentData.monthly;
+    return currentData.weekly;
+}
+
+function filterByDate(rows) {
+    const from = document.getElementById('dateFrom').value;
+    const to = document.getElementById('dateTo').value;
+    return rows.filter(r => r.period >= from && r.period <= to);
+}
+
+function applyFilters() {
+    const rows = filterByDate(getViewData());
+    renderKPIs(rows);
+    renderCharts(rows);
+    renderSummaryTable(rows);
+    renderCampaignTable();
+    renderCreativeTable();
+    renderReconciliation(rows);
+    renderCountry();
+    renderFunnel();
+}
+
+function fmt$(v) { return '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function fmtN(v) { return Number(v).toLocaleString('en-US', {maximumFractionDigits: 0}); }
+function fmtPct(v) { return Number(v).toFixed(1) + '%'; }
+function cplClass(v) { return v <= 60 ? 'cpl-good' : v <= 100 ? 'cpl-mid' : 'cpl-bad'; }
+
+function renderKPIs(rows) {
+    const totalSpend = rows.reduce((s, r) => s + r.spend, 0);
+    const totalClicks = rows.reduce((s, r) => s + r.clicks, 0);
+    const totalImpressions = rows.reduce((s, r) => s + r.impressions, 0);
+    const totalMetaLeads = rows.reduce((s, r) => s + r.meta_leads, 0);
+    const totalSFLeads = rows.reduce((s, r) => s + r.sf_leads, 0);
+    const trueCPL = totalSFLeads > 0 ? totalSpend / totalSFLeads : 0;
+    const gap = totalMetaLeads > 0 ? ((totalMetaLeads - totalSFLeads) / totalMetaLeads * 100) : 0;
+
+    document.getElementById('kpi-spend').textContent = fmt$(totalSpend);
+    document.getElementById('kpi-spend-sub').textContent = fmtN(totalClicks) + ' clicks';
+    document.getElementById('kpi-sf-leads').textContent = fmtN(totalSFLeads);
+    const cplEl = document.getElementById('kpi-cpl');
+    cplEl.textContent = fmt$(trueCPL);
+    cplEl.className = 'kpi-value ' + cplClass(trueCPL);
+    document.getElementById('kpi-meta-leads').textContent = fmtN(totalMetaLeads);
+    document.getElementById('kpi-gap').textContent = fmtPct(gap);
+    document.getElementById('kpi-coach').textContent = currentData.funnel.coach_match_rate + '%';
+}
+
+function renderCharts(rows) {
+    const periods = rows.map(r => r.period);
+    const spends = rows.map(r => r.spend);
+    const cpls = rows.map(r => r.true_cpl);
+    const sfLeads = rows.map(r => r.sf_leads);
+    const metaLeads = rows.map(r => r.meta_leads);
+    const convRates = rows.map(r => r.conv_rate);
+
+    // Chart A: Spend + CPL
+    Plotly.newPlot('chartSpendCPL', [
+        {x: periods, y: spends, type: 'bar', name: 'Spend', marker: {color: '#4361ee', opacity: 0.7}, yaxis: 'y'},
+        {x: periods, y: cpls, type: 'scatter', mode: 'lines+markers', name: 'True CPL', line: {color: '#e71d36', width: 3}, marker: {size: 6}, yaxis: 'y2'}
+    ], {
+        ...plotlyLayout,
+        title: {text: 'Spend & True CPL', font: {size: 14}},
+        yaxis: {title: 'Spend ($)', gridcolor: '#eee'},
+        yaxis2: {title: 'CPL ($)', overlaying: 'y', side: 'right', gridcolor: '#eee'},
+        xaxis: {gridcolor: '#eee'},
+        legend: {orientation: 'h', y: -0.15},
+        barmode: 'group',
+    }, plotlyConfig);
+
+    // Chart B: Lead Gap
+    Plotly.newPlot('chartLeadGap', [
+        {x: periods, y: metaLeads, type: 'bar', name: 'Meta Leads', marker: {color: '#ff9f1c', opacity: 0.8}},
+        {x: periods, y: sfLeads, type: 'bar', name: 'SF Leads', marker: {color: '#2ec4b6', opacity: 0.8}},
+    ], {
+        ...plotlyLayout,
+        title: {text: 'Meta vs Salesforce Leads', font: {size: 14}},
+        yaxis: {title: 'Leads', gridcolor: '#eee'},
+        xaxis: {gridcolor: '#eee'},
+        legend: {orientation: 'h', y: -0.15},
+        barmode: 'group',
+    }, plotlyConfig);
+
+    // Chart C: Conversion Rate
+    Plotly.newPlot('chartConvRate', [
+        {x: periods, y: convRates, type: 'scatter', mode: 'lines+markers', name: 'Click-to-Lead Rate (%)', line: {color: '#4361ee', width: 2}, fill: 'tozeroy', fillcolor: 'rgba(67,97,238,0.1)'},
+    ], {
+        ...plotlyLayout,
+        title: {text: 'Conversion Rate (Clicks → SF Leads)', font: {size: 14}},
+        yaxis: {title: '%', gridcolor: '#eee'},
+        xaxis: {gridcolor: '#eee'},
+        legend: {orientation: 'h', y: -0.15},
+    }, plotlyConfig);
+}
+
+function renderSummaryTable(rows) {
+    const tbody = document.getElementById('summaryBody');
+    tbody.innerHTML = rows.map(r => `
+        <tr>
+            <td>${r.period}</td>
+            <td>${fmt$(r.spend)}</td>
+            <td>${fmtN(r.clicks)}</td>
+            <td>${fmt$(r.cpc)}</td>
+            <td>${fmtPct(r.ctr)}</td>
+            <td>${fmtN(r.meta_leads)}</td>
+            <td>${fmtN(r.sf_leads)}</td>
+            <td>${fmtN(r.lead_gap)}</td>
+            <td class="${cplClass(r.true_cpl)}">${fmt$(r.true_cpl)}</td>
+            <td>${fmtPct(r.conv_rate)}</td>
+        </tr>
+    `).join('');
+
+    // Totals
+    const totSpend = rows.reduce((s,r) => s+r.spend, 0);
+    const totClicks = rows.reduce((s,r) => s+r.clicks, 0);
+    const totImpressions = rows.reduce((s,r) => s+r.impressions, 0);
+    const totMetaLeads = rows.reduce((s,r) => s+r.meta_leads, 0);
+    const totSFLeads = rows.reduce((s,r) => s+r.sf_leads, 0);
+    const totGap = totMetaLeads - totSFLeads;
+    const totCPC = totClicks > 0 ? totSpend / totClicks : 0;
+    const totCTR = totImpressions > 0 ? totClicks / totImpressions * 100 : 0;
+    const totCPL = totSFLeads > 0 ? totSpend / totSFLeads : 0;
+    const totConv = totClicks > 0 ? totSFLeads / totClicks * 100 : 0;
+
+    document.getElementById('sumSpend').textContent = fmt$(totSpend);
+    document.getElementById('sumClicks').textContent = fmtN(totClicks);
+    document.getElementById('sumCPC').textContent = fmt$(totCPC);
+    document.getElementById('sumCTR').textContent = fmtPct(totCTR);
+    document.getElementById('sumMetaLeads').textContent = fmtN(totMetaLeads);
+    document.getElementById('sumSFLeads').textContent = fmtN(totSFLeads);
+    document.getElementById('sumGap').textContent = fmtN(totGap);
+    document.getElementById('sumCPL').innerHTML = `<span class="${cplClass(totCPL)}">${fmt$(totCPL)}</span>`;
+    document.getElementById('sumConv').textContent = fmtPct(totConv);
+
+    if ($.fn.DataTable.isDataTable('#summaryTable')) {
+        $('#summaryTable').DataTable().destroy();
+    }
+    $('#summaryTable').DataTable({paging: false, searching: false, info: false, order: [[0, 'desc']]});
+}
+
+function renderCampaignTable() {
+    const tbody = document.getElementById('campaignBody');
+    tbody.innerHTML = currentData.campaigns.map(r => `
+        <tr>
+            <td>${r.campaign}</td>
+            <td>${fmt$(r.spend)}</td>
+            <td>${fmtN(r.clicks)}</td>
+            <td>${fmt$(r.cpc)}</td>
+            <td>${fmtPct(r.ctr)}</td>
+            <td>${fmtN(r.meta_leads)}</td>
+            <td>${fmtN(r.sf_leads)}</td>
+            <td class="${cplClass(r.true_cpl)}">${fmt$(r.true_cpl)}</td>
+            <td>${fmtPct(r.conv_rate)}</td>
+        </tr>
+    `).join('');
+
+    if ($.fn.DataTable.isDataTable('#campaignTable')) {
+        $('#campaignTable').DataTable().destroy();
+    }
+    $('#campaignTable').DataTable({paging: false, info: false, order: [[1, 'desc']]});
+}
+
+function renderCreativeTable() {
+    const tbody = document.getElementById('creativeBody');
+    tbody.innerHTML = currentData.creatives.map(r => `
+        <tr>
+            <td>${r.ad_name}</td>
+            <td>${r.campaign}</td>
+            <td>${fmt$(r.spend)}</td>
+            <td>${fmtN(r.clicks)}</td>
+            <td>${fmtN(r.meta_leads)}</td>
+            <td>${fmtN(r.sf_leads)}</td>
+            <td class="${cplClass(r.true_cpl)}">${fmt$(r.true_cpl)}</td>
+        </tr>
+    `).join('');
+
+    if ($.fn.DataTable.isDataTable('#creativeTable')) {
+        $('#creativeTable').DataTable().destroy();
+    }
+    $('#creativeTable').DataTable({paging: false, info: false, order: [[2, 'desc']]});
+}
+
+function renderReconciliation(rows) {
+    const periods = rows.map(r => r.period);
+    const gaps = rows.map(r => r.lead_gap);
+    const gapPcts = rows.map(r => r.lead_gap_pct);
+
+    Plotly.newPlot('chartReconciliation', [
+        {x: periods, y: gaps, type: 'bar', name: 'Lead Gap (Meta - SF)', marker: {color: gaps.map(g => g > 0 ? '#ff9f1c' : '#2ec4b6')}},
+        {x: periods, y: gapPcts, type: 'scatter', mode: 'lines+markers', name: 'Gap %', yaxis: 'y2', line: {color: '#e71d36', width: 2}},
+    ], {
+        ...plotlyLayout,
+        title: {text: 'Lead Reporting Gap Over Time', font: {size: 14}},
+        yaxis: {title: 'Lead Gap (#)', gridcolor: '#eee'},
+        yaxis2: {title: 'Gap %', overlaying: 'y', side: 'right'},
+        xaxis: {gridcolor: '#eee'},
+        legend: {orientation: 'h', y: -0.15},
+    }, plotlyConfig);
+}
+
+function renderCountry() {
+    const countries = currentData.countries.filter(c => c.spend > 10).slice(0, 15);
+    const names = countries.map(c => c.country);
+    const spends = countries.map(c => c.spend);
+
+    Plotly.newPlot('chartCountry', [{
+        y: names.reverse(),
+        x: spends.reverse(),
+        type: 'bar',
+        orientation: 'h',
+        marker: {color: '#4361ee', opacity: 0.8},
+    }], {
+        ...plotlyLayout,
+        title: {text: 'Spend by Country', font: {size: 14}},
+        xaxis: {title: 'Spend ($)', gridcolor: '#eee'},
+        margin: {l: 120, t: 40, r: 20, b: 40},
+    }, plotlyConfig);
+
+    const tbody = document.getElementById('countryBody');
+    tbody.innerHTML = currentData.countries.filter(c => c.spend > 10).map(r => `
+        <tr>
+            <td>${r.country}</td>
+            <td>${fmt$(r.spend)}</td>
+            <td>${fmtN(r.clicks)}</td>
+            <td>${fmtN(r.meta_leads)}</td>
+            <td>${fmt$(r.cpc)}</td>
+            <td class="${cplClass(r.meta_cpl)}">${fmt$(r.meta_cpl)}</td>
+        </tr>
+    `).join('');
+
+    if ($.fn.DataTable.isDataTable('#countryTable')) {
+        $('#countryTable').DataTable().destroy();
+    }
+    $('#countryTable').DataTable({paging: false, searching: false, info: false, order: [[1, 'desc']]});
+}
+
+function renderFunnel() {
+    const f = currentData.funnel;
+    const total = f.total_registered;
+    const items = [
+        {label: 'Total Registered', value: total, color: '#4361ee'},
+        {label: 'Ever Coached', value: f.ever_coached, color: '#2ec4b6'},
+        {label: 'Currently Meeting Coach', value: f.meeting_with_coach, color: '#00b894'},
+        {label: 'Stopped Meeting Coach', value: f.stopped_meeting, color: '#ff9f1c'},
+        {label: 'Scheduled', value: f.scheduled, color: '#6c5ce7'},
+        {label: 'Never Matched', value: f.never_matched, color: '#e71d36'},
+    ];
+
+    const container = document.getElementById('funnelContainer');
+    container.innerHTML = items.map(item => {
+        const pct = total > 0 ? (item.value / total * 100) : 0;
+        const width = Math.max(pct, 8);
+        return `
+            <div class="d-flex align-items-center mb-2">
+                <div style="width:140px;font-size:0.82rem;color:#666;text-align:right;padding-right:10px;">${item.label}</div>
+                <div class="funnel-bar" style="width:${width}%;background:${item.color};">
+                    ${item.value} (${pct.toFixed(1)}%)
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
