@@ -1,7 +1,36 @@
 {
-  "status": 0,
   "result": {
     "records": [
+      {
+        "attributes": {
+          "type": "Registration__c",
+          "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000IHi3tMAD"
+        },
+        "Id": "a2IRi00000IHi3tMAD",
+        "CreatedDate": "2026-04-18T13:04:19.000+0000",
+        "Status__c": "Never Matched",
+        "utm_source__c": "facebook",
+        "utm_campaign__c": "JT-US&INTL_March2026",
+        "utm_content__c": "7/31 - Community, Coaching, Personal Growth",
+        "utm_medium__c": "cpc",
+        "Disqualified__c": false,
+        "Disqualified_Reason__c": null
+      },
+      {
+        "attributes": {
+          "type": "Registration__c",
+          "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000IFJBGMA5"
+        },
+        "Id": "a2IRi00000IFJBGMA5",
+        "CreatedDate": "2026-04-17T06:40:20.000+0000",
+        "Status__c": "Never Matched",
+        "utm_source__c": "facebook",
+        "utm_campaign__c": "JT-US&INTL_March2026",
+        "utm_content__c": "7/31 - Community, Coaching, Personal Growth",
+        "utm_medium__c": "cpc",
+        "Disqualified__c": false,
+        "Disqualified_Reason__c": null
+      },
       {
         "attributes": {
           "type": "Registration__c",
@@ -399,7 +428,7 @@
         },
         "Id": "a2IRi00000HoffhMAB",
         "CreatedDate": "2026-04-03T16:28:55.000+0000",
-        "Status__c": "Scheduled",
+        "Status__c": "Meeting with a Coach",
         "utm_source__c": "facebook",
         "utm_campaign__c": "JT-US&INTL_March2026",
         "utm_content__c": "8/17 - Olami Video Ad - Pink Version",
@@ -11673,8 +11702,7 @@
         "Disqualified_Reason__c": null
       }
     ],
-    "totalSize": 778,
+    "totalSize": 780,
     "done": true
-  },
-  "warnings": []
+  }
 }
