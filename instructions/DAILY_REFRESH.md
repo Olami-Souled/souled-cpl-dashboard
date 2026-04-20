@@ -42,11 +42,12 @@ WHERE Program__c = 'a2F5f000000yRpfEAE'
   AND Student__r.Test_Old__c = false
   AND (NOT Student__r.Name LIKE '%test%')
   AND Referral_Type__c = 'Paid'
+  AND (utm_source__c IN ('facebook','ig','fb','Meta') OR utm_source__c LIKE '%fbclid%' OR utm_source__c = null)
   AND CreatedDate >= 2025-10-01T00:00:00Z
 ORDER BY CreatedDate DESC
 ```
 
-Save the response to `data/sf_registrations.json`. The loader accepts either `{"records": [...]}` or a raw list or the CLI wrapper `{"result": {"records": [...]}}` — whichever the MCP returns is fine.
+The extra utm_source clause excludes Google and TikTok paid (Souled ran those briefly in 2025). Save the response to `data/sf_registrations.json`. The loader accepts either `{"records": [...]}` or a raw list or the CLI wrapper `{"result": {"records": [...]}}` — whichever the MCP returns is fine.
 
 ### 5. Regenerate the dashboard
 ```bash
@@ -80,6 +81,6 @@ Pushed: <commit sha>
 ## Hard rules
 
 - **Never include today's date** in the Meta data fetch — partial-day numbers skew trends and CPL. `date_to` should be yesterday.
-- **SF Leads count = paid-acquisition Souled registrations only.** Filter: `Program__c = 'a2F5f000000yRpfEAE' AND Referral_Type__c = 'Paid' AND Student__r.Test_Old__c = false AND Student__r.Name NOT LIKE '%test%'`. `Referral_Type__c` is manually maintained by the Souled team — trust it over `utm_source__c` (which can be missing or wrong). Organic/referral/word-of-mouth registrations are explicitly excluded from this dashboard.
+- **SF Leads count = Meta-paid Souled registrations only.** This dashboard is Meta-specific (Facebook + Instagram). Souled also ran Google Ads and TikTok paid briefly in 2025 — those are excluded via the utm_source clause in the SOQL. The `Referral_Type__c = 'Paid'` gate comes first (manually maintained, trusted), then we narrow to Meta by matching utm_source against Meta values (`facebook`, `ig`, `fb`, `Meta`, `%fbclid%`, or null). A future schema improvement will add a `Paid_Source_Platform__c` picklist — see backlog.
 - **Never use the `sf` CLI.** You are running on Anthropic infrastructure, not Yair's laptop. SF access is only via the Souled-Salesforce MCP.
 - If any step fails, commit what you have with a message explaining the failure, then exit.

@@ -2117,30 +2117,6 @@
       {
         "attributes": {
           "type": "Registration__c",
-          "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000GyJY9MAN"
-        },
-        "Id": "a2IRi00000GyJY9MAN",
-        "CreatedDate": "2026-03-09T00:25:22.000+0000",
-        "Status__c": "Meeting with a Coach",
-        "utm_source__c": "Google",
-        "utm_campaign__c": "JT-PMax-US",
-        "utm_content__c": "_m__",
-        "utm_medium__c": "search",
-        "Referral_Type__c": "Paid",
-        "Referral_Category__c": "alien",
-        "Disqualified__c": false,
-        "Disqualified_Reason__c": null,
-        "Student__r": {
-          "attributes": {
-            "type": "Contact",
-            "url": "/services/data/v66.0/sobjects/Contact/003Ri000010y2oZIAQ"
-          },
-          "Name": "Elena Shur"
-        }
-      },
-      {
-        "attributes": {
-          "type": "Registration__c",
           "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000GxTG5MAN"
         },
         "Id": "a2IRi00000GxTG5MAN",
@@ -2405,30 +2381,6 @@
       {
         "attributes": {
           "type": "Registration__c",
-          "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000Gm8GeMAJ"
-        },
-        "Id": "a2IRi00000Gm8GeMAJ",
-        "CreatedDate": "2026-03-02T22:42:49.000+0000",
-        "Status__c": "Stopped Meeting with a Coach",
-        "utm_source__c": "Google",
-        "utm_campaign__c": "JT-PMax-US",
-        "utm_content__c": "_m__",
-        "utm_medium__c": "search",
-        "Referral_Type__c": "Paid",
-        "Referral_Category__c": "alien",
-        "Disqualified__c": false,
-        "Disqualified_Reason__c": null,
-        "Student__r": {
-          "attributes": {
-            "type": "Contact",
-            "url": "/services/data/v66.0/sobjects/Contact/003Ri000010fmHuIAI"
-          },
-          "Name": "Morgan Ware"
-        }
-      },
-      {
-        "attributes": {
-          "type": "Registration__c",
           "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000GkqaQMAR"
         },
         "Id": "a2IRi00000GkqaQMAR",
@@ -2621,30 +2573,6 @@
       {
         "attributes": {
           "type": "Registration__c",
-          "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000GhxIIMAZ"
-        },
-        "Id": "a2IRi00000GhxIIMAZ",
-        "CreatedDate": "2026-02-28T16:44:24.000+0000",
-        "Status__c": "Never Matched",
-        "utm_source__c": "Google",
-        "utm_campaign__c": "JT-PMax-US",
-        "utm_content__c": "_m__",
-        "utm_medium__c": "search",
-        "Referral_Type__c": "Paid",
-        "Referral_Category__c": "alien",
-        "Disqualified__c": false,
-        "Disqualified_Reason__c": null,
-        "Student__r": {
-          "attributes": {
-            "type": "Contact",
-            "url": "/services/data/v66.0/sobjects/Contact/003Ri000010Zq6VIAS"
-          },
-          "Name": "Michelle Singer"
-        }
-      },
-      {
-        "attributes": {
-          "type": "Registration__c",
           "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000Ghf3lMAB"
         },
         "Id": "a2IRi00000Ghf3lMAB",
@@ -2712,30 +2640,6 @@
             "url": "/services/data/v66.0/sobjects/Contact/003Ri000010Z8LsIAK"
           },
           "Name": "Chisom Akunne"
-        }
-      },
-      {
-        "attributes": {
-          "type": "Registration__c",
-          "url": "/services/data/v66.0/sobjects/Registration__c/a2IRi00000Gha8fMAB"
-        },
-        "Id": "a2IRi00000Gha8fMAB",
-        "CreatedDate": "2026-02-28T09:39:15.000+0000",
-        "Status__c": "Stopped Meeting with a Coach",
-        "utm_source__c": "Google",
-        "utm_campaign__c": "JT-PMax-US",
-        "utm_content__c": "_m__",
-        "utm_medium__c": "search",
-        "Referral_Type__c": "Paid",
-        "Referral_Category__c": "alien",
-        "Disqualified__c": false,
-        "Disqualified_Reason__c": null,
-        "Student__r": {
-          "attributes": {
-            "type": "Contact",
-            "url": "/services/data/v66.0/sobjects/Contact/003Ri000010ZHgiIAG"
-          },
-          "Name": "Schuyler Pimentel"
         }
       },
       {
@@ -18915,7 +18819,7 @@
         }
       }
     ],
-    "totalSize": 788,
+    "totalSize": 784,
     "done": true
   },
   "warnings": []
