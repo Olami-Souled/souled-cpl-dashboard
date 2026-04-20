@@ -2,3 +2,5 @@ pandas>=2.0
 jinja2>=3.0
 flask>=3.0
 gunicorn>=21.0
+simple-salesforce>=1.12
+requests>=2.31

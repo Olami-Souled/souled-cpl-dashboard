@@ -2,9 +2,14 @@
 Souled Meta Ads CPL Dashboard Generator
 Reads cached JSON data from Windsor.ai (Meta) and Salesforce,
 merges them, computes CPL metrics, and generates a self-contained HTML dashboard.
+
+Run with --fetch to pull live data from Windsor.ai REST API + Salesforce
+(requires WINDSOR_API_KEY, SF_USERNAME, SF_PASSWORD, SF_SECURITY_TOKEN env vars).
 """
+import argparse
 import json
 import os
+import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
@@ -13,6 +18,78 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 OUTPUT_FILE = os.path.join(BASE_DIR, "dashboard.html")
+
+
+def _windsor_fetch(fields, date_from, date_to):
+    """Call Windsor.ai REST API and return list of records."""
+    api_key = os.environ["WINDSOR_API_KEY"]
+    params = {
+        "api_key": api_key,
+        "date_from": date_from,
+        "date_to": date_to,
+        "fields": ",".join(fields),
+        "account_id": "548376353109705",
+    }
+    resp = requests.get("https://connectors.windsor.ai/facebook", params=params, timeout=120)
+    resp.raise_for_status()
+    data = resp.json()
+    # Windsor REST API returns {"data": [...]} or {"result": [...]}
+    return data.get("data") or data.get("result") or []
+
+
+def fetch_and_save_meta_data():
+    """Fetch all three Meta datasets from Windsor.ai REST API and save to data/."""
+    date_from = (datetime.now() - timedelta(days=183)).strftime("%Y-%m-%d")
+    date_to = datetime.now().strftime("%Y-%m-%d")
+    print(f"Fetching Meta data {date_from} → {date_to} from Windsor.ai REST API...")
+
+    daily_fields = ["date", "campaign", "spend", "clicks", "link_clicks", "impressions",
+                    "cpc", "ctr", "actions_lead", "actions_complete_registration",
+                    "cost_per_action_type_lead", "cost_per_action_type_complete_registration"]
+    country_fields = ["date", "campaign", "country", "spend", "clicks", "impressions",
+                      "actions_lead", "actions_complete_registration"]
+    creative_fields = ["date", "campaign", "ad_name", "spend", "clicks", "link_clicks",
+                       "actions_lead", "actions_complete_registration"]
+
+    for fields, filename in [
+        (daily_fields, "meta_daily.json"),
+        (country_fields, "meta_country.json"),
+        (creative_fields, "meta_creative.json"),
+    ]:
+        records = _windsor_fetch(fields, date_from, date_to)
+        path = os.path.join(DATA_DIR, filename)
+        with open(path, "w") as f:
+            json.dump({"result": records}, f)
+        print(f"  Saved {len(records)} rows → {filename}")
+
+
+def fetch_and_save_sf_data():
+    """Fetch Salesforce registrations via simple-salesforce and save to data/."""
+    from simple_salesforce import Salesforce
+    print("Fetching Salesforce registrations...")
+    sf = Salesforce(
+        username=os.environ["SF_USERNAME"],
+        password=os.environ["SF_PASSWORD"],
+        security_token=os.environ["SF_SECURITY_TOKEN"],
+    )
+    soql = (
+        "SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, "
+        "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c "
+        "FROM Registration__c "
+        "WHERE (utm_source__c = 'facebook' OR utm_source__c = 'ig' OR "
+        "utm_source__c = 'fb' OR utm_source__c = 'Meta') "
+        "AND CreatedDate >= 2025-10-01T00:00:00Z "
+        "ORDER BY CreatedDate DESC"
+    )
+    result = sf.query_all(soql)
+    records = result["records"]
+    # Remove Salesforce metadata field
+    for r in records:
+        r.pop("attributes", None)
+    path = os.path.join(DATA_DIR, "sf_registrations.json")
+    with open(path, "w") as f:
+        json.dump({"result": {"records": records, "totalSize": len(records)}}, f)
+    print(f"  Saved {len(records)} registrations → sf_registrations.json")
 
 
 def load_meta_daily():
@@ -326,4 +403,11 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fetch", action="store_true",
+                        help="Fetch live data from Windsor.ai + Salesforce before generating")
+    args = parser.parse_args()
+    if args.fetch:
+        fetch_and_save_meta_data()
+        fetch_and_save_sf_data()
     main()
