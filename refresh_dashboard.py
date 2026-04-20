@@ -143,7 +143,13 @@ def load_meta_creative():
 def load_sf_registrations():
     with open(os.path.join(DATA_DIR, "sf_registrations.json")) as f:
         data = json.load(f)
-    records = data["result"]["records"]
+    # Accept both the `sf` CLI wrapper format AND a plain {"records": [...]} or list
+    if isinstance(data, list):
+        records = data
+    elif "records" in data:
+        records = data["records"]
+    else:
+        records = data["result"]["records"]
     df = pd.DataFrame(records)
     df["date"] = pd.to_datetime(df["CreatedDate"]).dt.tz_localize(None).dt.normalize()
     df["campaign"] = df["utm_campaign__c"].fillna("Unattributed")
