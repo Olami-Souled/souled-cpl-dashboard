@@ -288,6 +288,13 @@ class Dashboard {
         this.applyFilters();
     }
 
+    getDateRange() {
+        return {
+            from: document.getElementById('dateFrom').value,
+            to: document.getElementById('dateTo').value
+        };
+    }
+
     getRows() {
         const src = this.view === 'D' ? this.raw.daily : this.view === 'M' ? this.raw.monthly : this.raw.weekly;
         const from = document.getElementById('dateFrom').value;
@@ -297,17 +304,19 @@ class Dashboard {
 
     applyFilters() {
         const rows = this.getRows();
-        this.renderKPIs(rows);
+        const {from, to} = this.getDateRange();
+        const funnel = this.computeFunnel(from, to);
+        this.renderKPIs(rows, funnel);
         this.renderCharts(rows);
         this.renderSummary(rows);
         this.renderCampaigns();
         this.renderCreatives();
         this.renderReconciliation(rows);
         this.renderCountry();
-        this.renderFunnel();
+        this.renderFunnelDisplay(funnel);
     }
 
-    renderKPIs(rows) {
+    renderKPIs(rows, funnel) {
         const s = rows.reduce((a,r) => a+r.spend, 0);
         const c = rows.reduce((a,r) => a+r.clicks, 0);
         const ml = rows.reduce((a,r) => a+r.meta_leads, 0);
@@ -321,7 +330,7 @@ class Dashboard {
         cplEl.textContent = fmt$(cpl); cplEl.className = 'kpi-value ' + cplClass(cpl);
         document.getElementById('kpi-meta-leads').textContent = fmtN(ml);
         document.getElementById('kpi-gap').textContent = fmtPct(gap);
-        document.getElementById('kpi-coach').textContent = this.raw.funnel.coach_match_rate + '%';
+        document.getElementById('kpi-coach').textContent = funnel.coach_match_rate + '%';
     }
 
     renderCharts(rows) {
@@ -414,8 +423,28 @@ class Dashboard {
     }
 
     renderCampaigns() {
+        const {from, to} = this.getDateRange();
         const q = (document.getElementById('campaignSearch').value || '').toLowerCase();
-        const data = this.raw.campaigns.filter(r => !q || r.campaign.toLowerCase().includes(q));
+        const bycamp = {};
+        this.raw.campaign_daily.filter(r => r.date >= from && r.date <= to).forEach(r => {
+            if (!bycamp[r.campaign]) bycamp[r.campaign] = {campaign:r.campaign, spend:0, clicks:0, impressions:0, meta_leads:0, sf_leads:0};
+            const c = bycamp[r.campaign];
+            c.spend += r.spend; c.clicks += r.clicks; c.impressions += r.impressions; c.meta_leads += r.meta_leads;
+        });
+        this.raw.sf_reg_daily.filter(r => r.date >= from && r.date <= to).forEach(r => {
+            const key = r.campaign || 'Unattributed';
+            if (!bycamp[key]) bycamp[key] = {campaign:key, spend:0, clicks:0, impressions:0, meta_leads:0, sf_leads:0};
+            bycamp[key].sf_leads++;
+        });
+        let data = Object.values(bycamp);
+        data.forEach(r => {
+            r.cpc = r.clicks ? +(r.spend/r.clicks).toFixed(2) : 0;
+            r.ctr = r.impressions ? +(r.clicks/r.impressions*100).toFixed(2) : 0;
+            r.true_cpl = r.sf_leads ? +(r.spend/r.sf_leads).toFixed(2) : 0;
+            r.conv_rate = r.clicks ? +(r.sf_leads/r.clicks*100).toFixed(2) : 0;
+        });
+        data.sort((a, b) => b.spend - a.spend);
+        if (q) data = data.filter(r => r.campaign.toLowerCase().includes(q));
         const limit = 10;
         const show = this.expanded.campaign ? data : data.slice(0, limit);
         document.getElementById('campaignBody').innerHTML = show.map(r => `<tr>
@@ -428,8 +457,22 @@ class Dashboard {
     }
 
     renderCreatives() {
+        const {from, to} = this.getDateRange();
         const q = (document.getElementById('creativeSearch').value || '').toLowerCase();
-        const data = this.raw.creatives.filter(r => !q || r.ad_name.toLowerCase().includes(q) || r.campaign.toLowerCase().includes(q));
+        const bycreative = {};
+        this.raw.creative_daily.filter(r => r.date >= from && r.date <= to).forEach(r => {
+            if (!bycreative[r.ad_name]) bycreative[r.ad_name] = {ad_name:r.ad_name, campaign:r.campaign, spend:0, clicks:0, meta_leads:0, sf_leads:0};
+            const c = bycreative[r.ad_name];
+            c.spend += r.spend; c.clicks += r.clicks; c.meta_leads += r.meta_leads;
+        });
+        this.raw.sf_reg_daily.filter(r => r.date >= from && r.date <= to).forEach(r => {
+            const key = r.ad_content;
+            if (bycreative[key]) bycreative[key].sf_leads++;
+        });
+        let data = Object.values(bycreative);
+        data.forEach(r => { r.true_cpl = r.sf_leads ? +(r.spend/r.sf_leads).toFixed(2) : 0; });
+        data.sort((a, b) => b.spend - a.spend);
+        if (q) data = data.filter(r => r.ad_name.toLowerCase().includes(q) || r.campaign.toLowerCase().includes(q));
         const limit = 10;
         const show = this.expanded.creative ? data : data.slice(0, limit);
         document.getElementById('creativeBody').innerHTML = show.map(r => `<tr>
@@ -476,7 +519,19 @@ class Dashboard {
     }
 
     renderCountry() {
-        const countries = this.raw.countries.filter(c => c.spend > 10);
+        const {from, to} = this.getDateRange();
+        const bycountry = {};
+        this.raw.country_daily.filter(r => r.date >= from && r.date <= to).forEach(r => {
+            if (!bycountry[r.country]) bycountry[r.country] = {country:r.country, spend:0, clicks:0, impressions:0, meta_leads:0};
+            const c = bycountry[r.country];
+            c.spend += r.spend; c.clicks += r.clicks; c.impressions += r.impressions; c.meta_leads += r.meta_leads;
+        });
+        let countries = Object.values(bycountry);
+        countries.forEach(r => {
+            r.cpc = r.clicks ? +(r.spend/r.clicks).toFixed(2) : 0;
+            r.meta_cpl = r.meta_leads ? +(r.spend/r.meta_leads).toFixed(2) : 0;
+        });
+        countries = countries.filter(c => c.spend > 10).sort((a, b) => b.spend - a.spend);
         if (this.charts.country) this.charts.country.destroy();
         const top10 = countries.slice(0, 10);
         this.charts.country = new Chart(document.getElementById('chartCountry'), {
@@ -493,8 +548,26 @@ class Dashboard {
         this._expandBtn('countryExpand', countries.length, limit, 'country', () => this.renderCountry());
     }
 
-    renderFunnel() {
-        const f = this.raw.funnel;
+    computeFunnel(from, to) {
+        const filtered = this.raw.sf_reg_daily.filter(r => r.date >= from && r.date <= to);
+        const counts = {};
+        filtered.forEach(r => counts[r.status] = (counts[r.status] || 0) + 1);
+        const total = filtered.length;
+        const f = {
+            total_registered: total,
+            scheduled: counts['Scheduled'] || 0,
+            meeting_with_coach: counts['Meeting with a Coach'] || 0,
+            stopped_meeting: counts['Stopped Meeting with a Coach'] || 0,
+            never_matched: counts['Never Matched'] || 0,
+            matched_new_coach: counts['Matched with new coach'] || 0,
+            being_matched: counts['Being matched with another coach'] || 0,
+        };
+        f.ever_coached = f.meeting_with_coach + f.stopped_meeting + f.matched_new_coach;
+        f.coach_match_rate = total ? (f.ever_coached / total * 100).toFixed(1) : '0.0';
+        return f;
+    }
+
+    renderFunnelDisplay(f) {
         const total = f.total_registered;
         const items = [
             {label:'Total Registered', value:total, color:'#4361ee'},

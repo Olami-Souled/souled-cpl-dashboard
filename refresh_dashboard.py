@@ -176,6 +176,47 @@ def build_country_table(country_df):
     return country_agg
 
 
+def build_campaign_daily(meta_df):
+    df = meta_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "campaign"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "campaign"])
+
+
+def build_country_daily(country_df):
+    df = country_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "country"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "country"])
+
+
+def build_creative_daily(creative_df):
+    df = creative_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "ad_name", "campaign"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "ad_name"])
+
+
+def build_sf_reg_daily(sf_df):
+    result = sf_df[["date", "campaign", "ad_content", "status"]].copy()
+    result["date"] = result["date"].dt.strftime("%Y-%m-%d")
+    return result.to_dict("records")
+
+
 def build_status_funnel(sf_df):
     status_counts = sf_df["status"].value_counts().to_dict()
     total = len(sf_df)
@@ -249,6 +290,10 @@ def main():
     country_table = build_country_table(meta_country)
     status_funnel = build_status_funnel(sf)
     kpis = compute_kpis(meta_daily, sf)
+    campaign_daily = build_campaign_daily(meta_daily)
+    country_daily = build_country_daily(meta_country)
+    creative_daily = build_creative_daily(meta_creative)
+    sf_reg_daily = build_sf_reg_daily(sf)
 
     print("Generating dashboard...")
     dashboard_data = {
@@ -263,6 +308,10 @@ def main():
         "creatives": df_to_json_records(creative_table),
         "countries": df_to_json_records(country_table),
         "funnel": status_funnel,
+        "campaign_daily": df_to_json_records(campaign_daily),
+        "country_daily": df_to_json_records(country_daily),
+        "creative_daily": df_to_json_records(creative_daily),
+        "sf_reg_daily": sf_reg_daily,
     }
 
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
