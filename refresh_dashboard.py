@@ -92,6 +92,12 @@ def fetch_and_save_sf_data():
     print(f"  Saved {len(records)} registrations → sf_registrations.json")
 
 
+def _exclude_today(df):
+    """Drop rows from today (partial day skews trends and CPL)."""
+    today = pd.Timestamp(datetime.now().date())
+    return df[df["date"] < today].copy()
+
+
 def load_meta_daily():
     with open(os.path.join(DATA_DIR, "meta_daily.json")) as f:
         data = json.load(f)
@@ -105,7 +111,7 @@ def load_meta_daily():
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     # Combine both conversion events: older campaigns used complete_registration, newer use lead
     df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
-    return df
+    return _exclude_today(df)
 
 
 def load_meta_country():
@@ -118,7 +124,7 @@ def load_meta_country():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
-    return df
+    return _exclude_today(df)
 
 
 def load_meta_creative():
@@ -131,7 +137,7 @@ def load_meta_creative():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
-    return df
+    return _exclude_today(df)
 
 
 def load_sf_registrations():
@@ -144,7 +150,7 @@ def load_sf_registrations():
     df["ad_content"] = df["utm_content__c"].fillna("Unknown")
     df["status"] = df["Status__c"]
     df["disqualified"] = df["Disqualified__c"].fillna(False)
-    return df
+    return _exclude_today(df)
 
 
 def compute_iso_week(dt):

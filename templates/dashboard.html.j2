@@ -173,18 +173,6 @@
             <canvas id="chartReconciliation" style="max-height:250px;"></canvas>
         </div>
     </section>
-    <section class="two-col">
-        <div class="chart-container">
-            <h3>Geographic Breakdown</h3>
-            <canvas id="chartCountry" style="max-height:300px;"></canvas>
-        </div>
-        <div class="chart-container">
-            <h3>Lead Status Funnel</h3>
-            <div id="funnelContainer" style="padding-top:8px;"></div>
-            <canvas id="chartFunnel" style="max-height:220px;margin-top:12px;"></canvas>
-        </div>
-    </section>
-
     <!-- ALL TABLES BELOW -->
     <section class="section">
         <h3>Period Summary</h3>
@@ -224,16 +212,6 @@
         <div class="expand-toggle" id="creativeExpand"></div>
     </section>
 
-    <section class="section">
-        <h3>Geographic Detail</h3>
-        <div class="table-responsive">
-            <table class="data-table" id="countryTable"><thead><tr>
-                <th>Country</th><th class="text-right">Spend</th><th class="text-right">Clicks</th>
-                <th class="text-right">Meta Leads</th><th class="text-right">CPC</th><th class="text-right">Meta CPL</th>
-            </tr></thead><tbody id="countryBody"></tbody></table>
-        </div>
-        <div class="expand-toggle" id="countryExpand"></div>
-    </section>
 
     <footer class="dashboard-footer">
         Souled Meta Ads CPL Dashboard — Data sourced from Windsor.ai (Meta) & Salesforce
@@ -255,7 +233,7 @@ class Dashboard {
         this.view = 'W';
         this.sortCol = 'period'; this.sortDir = 'desc';
         this.charts = {};
-        this.expanded = { summary: false, campaign: false, creative: false, country: false };
+        this.expanded = { summary: false, campaign: false, creative: false };
         this.init();
     }
 
@@ -312,8 +290,6 @@ class Dashboard {
         this.renderCampaigns();
         this.renderCreatives();
         this.renderReconciliation(rows);
-        this.renderCountry();
-        this.renderFunnelDisplay(funnel);
     }
 
     renderKPIs(rows, funnel) {
@@ -497,7 +473,6 @@ class Dashboard {
         if (key === 'summary') this.renderSummary(this.getRows());
         else if (key === 'campaign') this.renderCampaigns();
         else if (key === 'creative') this.renderCreatives();
-        else if (key === 'country') this.renderCountry();
     }
 
     renderReconciliation(rows) {
@@ -516,36 +491,6 @@ class Dashboard {
                 scales:{y:{title:{display:true,text:'Lead Gap (#)'},grid:{color:'#f0f0f0'}},y1:{position:'right',title:{display:true,text:'Gap %'},grid:{drawOnChartArea:false}},x:{grid:{display:false}}}
             }
         });
-    }
-
-    renderCountry() {
-        const {from, to} = this.getDateRange();
-        const bycountry = {};
-        this.raw.country_daily.filter(r => r.date >= from && r.date <= to).forEach(r => {
-            if (!bycountry[r.country]) bycountry[r.country] = {country:r.country, spend:0, clicks:0, impressions:0, meta_leads:0};
-            const c = bycountry[r.country];
-            c.spend += r.spend; c.clicks += r.clicks; c.impressions += r.impressions; c.meta_leads += r.meta_leads;
-        });
-        let countries = Object.values(bycountry);
-        countries.forEach(r => {
-            r.cpc = r.clicks ? +(r.spend/r.clicks).toFixed(2) : 0;
-            r.meta_cpl = r.meta_leads ? +(r.spend/r.meta_leads).toFixed(2) : 0;
-        });
-        countries = countries.filter(c => c.spend > 10).sort((a, b) => b.spend - a.spend);
-        if (this.charts.country) this.charts.country.destroy();
-        const top10 = countries.slice(0, 10);
-        this.charts.country = new Chart(document.getElementById('chartCountry'), {
-            type:'bar',
-            data: { labels:top10.map(c=>c.country), datasets:[{label:'Spend',data:top10.map(c=>c.spend),backgroundColor:COLORS.map(c=>c+'CC'),borderRadius:4}]},
-            options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>fmt$(ctx.parsed.x)}}}, scales:{x:{grid:{color:'#f0f0f0'},ticks:{callback:v=>'$'+(v/1000).toFixed(0)+'K'}},y:{grid:{display:false}}} }
-        });
-        const limit = 10;
-        const show = this.expanded.country ? countries : countries.slice(0, limit);
-        document.getElementById('countryBody').innerHTML = show.map(r => `<tr>
-            <td>${r.country}</td><td class="text-right">${fmt$(r.spend)}</td><td class="text-right">${fmtN(r.clicks)}</td>
-            <td class="text-right">${fmtN(r.meta_leads)}</td><td class="text-right">${fmt$(r.cpc)}</td>
-            <td class="text-right ${cplClass(r.meta_cpl)}">${fmt$(r.meta_cpl)}</td></tr>`).join('');
-        this._expandBtn('countryExpand', countries.length, limit, 'country', () => this.renderCountry());
     }
 
     computeFunnel(from, to) {
@@ -567,28 +512,6 @@ class Dashboard {
         return f;
     }
 
-    renderFunnelDisplay(f) {
-        const total = f.total_registered;
-        const items = [
-            {label:'Total Registered', value:total, color:'#4361ee'},
-            {label:'Ever Coached', value:f.ever_coached, color:'#2ec4b6'},
-            {label:'Meeting Coach', value:f.meeting_with_coach, color:'#00b894'},
-            {label:'Stopped Meeting', value:f.stopped_meeting, color:'#ff9f1c'},
-            {label:'Scheduled', value:f.scheduled, color:'#6c5ce7'},
-            {label:'Never Matched', value:f.never_matched, color:'#e71d36'},
-        ];
-        document.getElementById('funnelContainer').innerHTML = items.map(i => {
-            const pct = total ? (i.value/total*100) : 0;
-            return `<div class="funnel-item"><div class="funnel-label">${i.label}</div><div class="funnel-bar" style="width:${Math.max(pct,8)}%;background:${i.color}">${i.value} (${pct.toFixed(1)}%)</div></div>`;
-        }).join('');
-
-        if (this.charts.funnel) this.charts.funnel.destroy();
-        this.charts.funnel = new Chart(document.getElementById('chartFunnel'), {
-            type:'doughnut',
-            data: { labels:['Meeting Coach','Stopped Meeting','Scheduled','Never Matched'], datasets:[{data:[f.meeting_with_coach,f.stopped_meeting,f.scheduled,f.never_matched], backgroundColor:['#00b894','#ff9f1c','#6c5ce7','#e71d36'], borderColor:'#fff', borderWidth:2}]},
-            options: { responsive:true, maintainAspectRatio:false, cutout:'55%', plugins:{legend:{position:'bottom',labels:{usePointStyle:true,padding:12}},tooltip:{callbacks:{label:ctx=>{const t=ctx.dataset.data.reduce((a,b)=>a+b,0);return ctx.label+': '+ctx.parsed+' ('+(ctx.parsed/t*100).toFixed(1)+'%)'}}}}}
-        });
-    }
 }
 
 const dashboard = new Dashboard(RAW);
