@@ -142,6 +142,7 @@
             <button class="preset-btn" data-preset="6m" onclick="dashboard.setPreset('6m',this)">6M</button>
             <button class="preset-btn" data-preset="3m" onclick="dashboard.setPreset('3m',this)">3M</button>
             <button class="preset-btn" data-preset="1m" onclick="dashboard.setPreset('1m',this)">1M</button>
+            <button class="preset-btn" data-preset="1w" onclick="dashboard.setPreset('1w',this)">1W</button>
             <button class="preset-btn" data-preset="all" onclick="dashboard.setPreset('all',this)">All</button>
         </div>
         <div class="view-toggle">
@@ -247,7 +248,8 @@ class Dashboard {
     setPreset(p, btn) {
         const end = new Date(this.raw.date_max);
         let start;
-        if (p === '1m') start = new Date(end.getFullYear(), end.getMonth() - 1, end.getDate());
+        if (p === '1w') { start = new Date(end); start.setDate(start.getDate() - 7); }
+        else if (p === '1m') start = new Date(end.getFullYear(), end.getMonth() - 1, end.getDate());
         else if (p === '3m') start = new Date(end.getFullYear(), end.getMonth() - 3, end.getDate());
         else if (p === '6m') start = new Date(end.getFullYear(), end.getMonth() - 6, end.getDate());
         else start = new Date(this.raw.date_min);
