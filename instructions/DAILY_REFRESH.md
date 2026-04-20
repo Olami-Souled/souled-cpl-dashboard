@@ -36,11 +36,12 @@ Same connector/account. Fields: `["date","campaign","ad_name","spend","clicks","
 Call the Souled-Salesforce MCP `salesforce_query` tool with this SOQL:
 
 ```sql
-SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c
+SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, utm_content__c, utm_medium__c, Referral_Type__c, Referral_Category__c, Disqualified__c, Disqualified_Reason__c
 FROM Registration__c
 WHERE Program__c = 'a2F5f000000yRpfEAE'
   AND Student__r.Test_Old__c = false
   AND (NOT Student__r.Name LIKE '%test%')
+  AND Referral_Type__c = 'Paid'
   AND CreatedDate >= 2025-10-01T00:00:00Z
 ORDER BY CreatedDate DESC
 ```
@@ -79,6 +80,6 @@ Pushed: <commit sha>
 ## Hard rules
 
 - **Never include today's date** in the Meta data fetch — partial-day numbers skew trends and CPL. `date_to` should be yesterday.
-- **Never filter SF registrations by utm_source.** The SF Leads count is ALL Souled registrations (Program__c = `a2F5f000000yRpfEAE`), because Meta spend drives registrations that don't always carry a UTM. Test records are excluded via `Student__r.Test_Old__c = false AND Student__r.Name NOT LIKE '%test%'`.
+- **SF Leads count = paid-acquisition Souled registrations only.** Filter: `Program__c = 'a2F5f000000yRpfEAE' AND Referral_Type__c = 'Paid' AND Student__r.Test_Old__c = false AND Student__r.Name NOT LIKE '%test%'`. `Referral_Type__c` is manually maintained by the Souled team — trust it over `utm_source__c` (which can be missing or wrong). Organic/referral/word-of-mouth registrations are explicitly excluded from this dashboard.
 - **Never use the `sf` CLI.** You are running on Anthropic infrastructure, not Yair's laptop. SF access is only via the Souled-Salesforce MCP.
 - If any step fails, commit what you have with a message explaining the failure, then exit.
