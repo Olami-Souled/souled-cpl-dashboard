@@ -334,12 +334,12 @@ def load_ab_test_data():
     df["date"] = pd.to_datetime(df["CreatedDate"]).dt.tz_localize(None).dt.normalize()
     # null Form_Arm__c = legacy Visualforce form; treat as "old" until India team ships the field
     df["arm"] = df["Form_Arm__c"].fillna("old")
-    df = _exclude_today(df)
+    # A/B section shows real-time (today included); other dashboard sections still exclude today.
 
-    # Full date range: A/B start to yesterday (zero-fill days with no registrations)
+    # Full date range: A/B start to today (zero-fill days with no registrations)
     start = pd.Timestamp(AB_TEST_START)
-    yesterday = pd.Timestamp(datetime.now().date()) - timedelta(days=1)
-    all_dates = pd.date_range(start=start, end=yesterday, freq="D")
+    today = pd.Timestamp(datetime.now().date())
+    all_dates = pd.date_range(start=start, end=today, freq="D")
 
     counts = df.groupby(["date", "arm"]).size().reset_index(name="count")
     date_index = pd.DataFrame({"date": all_dates})
