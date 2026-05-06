@@ -300,6 +300,69 @@ def build_creative_daily(creative_df):
     return agg.sort_values(["date", "ad_name"])
 
 
+AB_TEST_START = "2026-04-29"
+
+
+def load_ab_test_data():
+    """Load A/B test arm data from data/sf_ab_test.json.
+
+    Returns (ab_daily_records, ab_totals):
+    - ab_daily_records: list of {date_str, new_count, old_count}, one row per day from AB_TEST_START to yesterday
+    - ab_totals: {new, old, lift_str}
+    """
+    path = os.path.join(DATA_DIR, "sf_ab_test.json")
+    if not os.path.exists(path):
+        return [], {"new": 0, "old": 0, "lift_str": "n/a"}
+
+    with open(path) as f:
+        data = json.load(f)
+
+    if isinstance(data, list):
+        records = data
+    elif "records" in data:
+        records = data["records"]
+    elif "result" in data:
+        r = data["result"]
+        records = r if isinstance(r, list) else r.get("records", [])
+    else:
+        records = []
+
+    if not records:
+        return [], {"new": 0, "old": 0, "lift_str": "n/a"}
+
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["CreatedDate"]).dt.tz_localize(None).dt.normalize()
+    # null Form_Arm__c = legacy Visualforce form; treat as "old" until India team ships the field
+    df["arm"] = df["Form_Arm__c"].fillna("old")
+    df = _exclude_today(df)
+
+    # Full date range: A/B start to yesterday (zero-fill days with no registrations)
+    start = pd.Timestamp(AB_TEST_START)
+    yesterday = pd.Timestamp(datetime.now().date()) - timedelta(days=1)
+    all_dates = pd.date_range(start=start, end=yesterday, freq="D")
+
+    counts = df.groupby(["date", "arm"]).size().reset_index(name="count")
+    date_index = pd.DataFrame({"date": all_dates})
+    for arm_name, col_name in [("new", "new_count"), ("old", "old_count")]:
+        arm_data = counts[counts["arm"] == arm_name][["date", "count"]].rename(columns={"count": col_name})
+        date_index = date_index.merge(arm_data, on="date", how="left")
+    date_index = date_index.fillna(0)
+    date_index["new_count"] = date_index["new_count"].astype(int)
+    date_index["old_count"] = date_index["old_count"].astype(int)
+    date_index["date_str"] = date_index["date"].dt.strftime("%Y-%m-%d")
+
+    total_new = int((df["arm"] == "new").sum())
+    total_old = int((df["arm"] == "old").sum())
+    if total_old > 0:
+        lift_str = f"{total_new / total_old:.1f}× new / old"
+    else:
+        lift_str = "n/a (old = 0)"
+
+    ab_totals = {"new": total_new, "old": total_old, "lift_str": lift_str}
+    ab_daily = date_index[["date_str", "new_count", "old_count"]].to_dict("records")
+    return ab_daily, ab_totals
+
+
 def build_sf_reg_daily(sf_df):
     result = sf_df[["date", "campaign", "ad_content", "status"]].copy()
     result["date"] = result["date"].dt.strftime("%Y-%m-%d")
@@ -363,6 +426,7 @@ def main():
     meta_country = load_meta_country()
     meta_creative = load_meta_creative()
     sf = load_sf_registrations()
+    ab_daily, ab_totals = load_ab_test_data()
 
     date_min = meta_daily["date"].min().strftime("%Y-%m-%d")
     date_max = meta_daily["date"].max().strftime("%Y-%m-%d")
@@ -401,6 +465,8 @@ def main():
         "country_daily": df_to_json_records(country_daily),
         "creative_daily": df_to_json_records(creative_daily),
         "sf_reg_daily": sf_reg_daily,
+        "ab_daily": ab_daily,
+        "ab_totals": ab_totals,
     }
 
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))

@@ -103,6 +103,11 @@
         .expand-toggle button { padding: 6px 20px; border: 1px solid #dee2e6; border-radius: 4px; background: white; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--color-1); }
         .expand-toggle button:hover { background: #f0f0f4; }
 
+        .ab-kpi-row { display: flex; gap: var(--gap); margin-bottom: 20px; flex-wrap: wrap; }
+        .ab-kpi-row .kpi-card { flex: 1; min-width: 140px; }
+        .ab-kpi-value-new { color: #10b981; }
+        .ab-kpi-value-old { color: #6b7280; }
+
         @media (max-width: 768px) {
             .dashboard-header { flex-direction: column; align-items: flex-start; }
             .kpi-row { grid-template-columns: repeat(2, 1fr); }
@@ -159,6 +164,33 @@
         <div class="kpi-card"><div class="kpi-label">True CPL</div><div class="kpi-value" id="kpi-cpl"></div><div class="kpi-sub">Spend / SF Leads</div></div>
         <div class="kpi-card"><div class="kpi-label">Lead Gap</div><div class="kpi-value" id="kpi-gap" style="color:var(--color-4)"></div><div class="kpi-sub">Meta vs SF Difference</div></div>
         <div class="kpi-card"><div class="kpi-label">Coach Match Rate</div><div class="kpi-value" id="kpi-coach" style="color:var(--positive)"></div><div class="kpi-sub">Ever Matched to Coach</div></div>
+    </section>
+
+    <!-- FORM A/B TEST SECTION -->
+    <section class="section">
+        <h3>Form A/B Test <span style="font-size:11px;font-weight:400;color:var(--text-secondary);margin-left:8px;">Apr 29, 2026 onward · paid registrations only</span></h3>
+        <div class="ab-kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-label">New Form</div>
+                <div class="kpi-value ab-kpi-value-new" id="ab-kpi-new">—</div>
+                <div class="kpi-sub">WordPress form (souled.olami.org)</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Old Form</div>
+                <div class="kpi-value ab-kpi-value-old" id="ab-kpi-old">—</div>
+                <div class="kpi-sub">Legacy Visualforce (online.olami.org)</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Lift</div>
+                <div class="kpi-value" id="ab-kpi-lift" style="color:var(--color-1)">—</div>
+                <div class="kpi-sub">New ÷ Old multiplier</div>
+            </div>
+        </div>
+        <canvas id="ab-test-chart" style="max-height:240px;"></canvas>
+        <p class="section-note" style="margin-top:12px;">
+            A/B test: legacy Visualforce form vs new WordPress form. Splitter at souled.olami.org/join-now/ routes 50/50.<br>
+            <span id="ab-last-updated"></span>
+        </p>
     </section>
 
     <!-- ALL CHARTS FIRST -->
@@ -517,6 +549,40 @@ class Dashboard {
 }
 
 const dashboard = new Dashboard(RAW);
+
+// A/B Test section — always shows Apr 29 forward, not subject to the date range filter
+(function() {
+    const t = RAW.ab_totals || {new: 0, old: 0, lift_str: 'n/a'};
+    document.getElementById('ab-kpi-new').textContent = fmtN(t.new);
+    document.getElementById('ab-kpi-old').textContent = fmtN(t.old);
+    document.getElementById('ab-kpi-lift').textContent = t.lift_str;
+    document.getElementById('ab-last-updated').textContent = 'Last updated: ' + RAW.generated_at;
+
+    const rows = RAW.ab_daily || [];
+    new Chart(document.getElementById('ab-test-chart'), {
+        type: 'bar',
+        data: {
+            labels: rows.map(r => r.date_str),
+            datasets: [
+                {label: 'New form (WP)', data: rows.map(r => r.new_count), backgroundColor: '#10b981', borderRadius: 3, stack: 'arms'},
+                {label: 'Old form (Visualforce)', data: rows.map(r => r.old_count), backgroundColor: '#6b7280', borderRadius: 3, stack: 'arms'}
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {mode: 'index', intersect: false},
+            plugins: {
+                legend: {position: 'top', labels: {usePointStyle: true, padding: 15}},
+                tooltip: {callbacks: {label: ctx => ctx.dataset.label + ': ' + fmtN(ctx.parsed.y) + ' reg' + (ctx.parsed.y !== 1 ? 's' : '')}}
+            },
+            scales: {
+                x: {stacked: true, grid: {display: false}},
+                y: {stacked: true, beginAtZero: true, title: {display: true, text: 'Paid Registrations'}, grid: {color: '#f0f0f0'}, ticks: {precision: 0}}
+            }
+        }
+    });
+})();
 </script>
 </body>
 </html>

@@ -49,6 +49,23 @@ ORDER BY CreatedDate DESC
 
 The extra utm_source clause excludes Google and TikTok paid (Souled ran those briefly in 2025). Save the response to `data/sf_registrations.json`. The loader accepts either `{"records": [...]}` or a raw list or the CLI wrapper `{"result": {"records": [...]}}` — whichever the MCP returns is fine.
 
+### 4a. Fetch A/B test registrations
+
+Call the Souled-Salesforce MCP `salesforce_query` tool with this SOQL:
+
+```sql
+SELECT Id, CreatedDate, Form_Arm__c
+FROM Registration__c
+WHERE Program__c = 'a2F5f000000yRpfEAE'
+  AND Student__r.Test_Old__c = false
+  AND (NOT Student__r.Name LIKE '%test%')
+  AND Referral_Type__c = 'Paid'
+  AND CreatedDate >= 2026-04-29T00:00:00Z
+ORDER BY CreatedDate ASC
+```
+
+Save the response to `data/sf_ab_test.json`. The loader accepts `{"records": [...]}`, a raw list, or the CLI wrapper format — whichever the MCP returns is fine. Full query reference and arm-mapping notes: `instructions/AB_TEST_QUERY.md`.
+
 ### 5. Regenerate the dashboard
 ```bash
 pip install -q pandas jinja2
