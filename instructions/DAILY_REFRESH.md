@@ -59,8 +59,9 @@ FROM Registration__c
 WHERE Program__c = 'a2F5f000000yRpfEAE'
   AND Student__r.Test_Old__c = false
   AND (NOT Student__r.Name LIKE '%test%')
+  AND Student__r.Failed_Validation__c = false
   AND Referral_Type__c = 'Paid'
-  AND CreatedDate >= 2026-04-29T00:00:00Z
+  AND CreatedDate >= 2026-04-30T00:00:00Z
 ORDER BY CreatedDate ASC
 ```
 

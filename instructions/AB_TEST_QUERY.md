@@ -8,8 +8,9 @@ FROM Registration__c
 WHERE Program__c = 'a2F5f000000yRpfEAE'
   AND Student__r.Test_Old__c = false
   AND (NOT Student__r.Name LIKE '%test%')
+  AND Student__r.Failed_Validation__c = false
   AND Referral_Type__c = 'Paid'
-  AND CreatedDate >= 2026-04-29T00:00:00Z
+  AND CreatedDate >= 2026-04-30T00:00:00Z
 ORDER BY CreatedDate ASC
 ```
 
@@ -18,7 +19,8 @@ ORDER BY CreatedDate ASC
 - `Program__c = 'a2F5f000000yRpfEAE'` — Souled program only
 - `Test_Old__c = false AND NOT Name LIKE '%test%'` — standard test-record exclusion
 - `Referral_Type__c = 'Paid'` — paid acquisition only (no UTM filter here; the Paid flag is the gate)
-- `CreatedDate >= 2026-04-29T00:00:00Z` — A/B test start date
+- `Student__r.Failed_Validation__c = false` — exclude contacts who failed form validation (matches the canonical SF report filter)
+- `CreatedDate >= 2026-04-30T00:00:00Z` — tracking start date (Form_Arm__c field was deployed Apr 30; Apr 29 nulls are pre-tracking and ambiguous)
 
 ## Arm mapping
 

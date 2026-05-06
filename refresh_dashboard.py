@@ -300,7 +300,7 @@ def build_creative_daily(creative_df):
     return agg.sort_values(["date", "ad_name"])
 
 
-AB_TEST_START = "2026-04-29"
+AB_TEST_START = "2026-04-30"
 
 
 def load_ab_test_data():
