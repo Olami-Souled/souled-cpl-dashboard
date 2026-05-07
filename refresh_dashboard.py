@@ -78,6 +78,8 @@ def fetch_and_save_sf_data():
         "FROM Registration__c "
         "WHERE (utm_source__c = 'facebook' OR utm_source__c = 'ig' OR "
         "utm_source__c = 'fb' OR utm_source__c = 'Meta') "
+        "AND Student__r.Test_Old__c = false "
+        "AND (NOT Student__r.Name LIKE '%test%') "
         "AND CreatedDate >= 2025-10-01T00:00:00Z "
         "ORDER BY CreatedDate DESC"
     )

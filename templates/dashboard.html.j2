@@ -190,7 +190,7 @@
         </div>
         <canvas id="ab-test-chart" style="max-height:240px;"></canvas>
         <p class="section-note" style="margin-top:12px;">
-            A/B test: legacy Visualforce form vs new WordPress form. Splitter at souled.olami.org/join-now/ routes 50/50.<br>
+            A/B test: legacy Visualforce form vs new WordPress form. Splitter at souled.olami.org/join-now/ now routes 100% to new form (as of 2026-05-07).<br>
             <span id="ab-last-updated"></span>
         </p>
     </section>
@@ -204,7 +204,7 @@
         <div class="chart-container"><h3>Conversion Rate (Clicks → SF Leads)</h3><canvas id="chartConvRate" style="max-height:220px;"></canvas></div>
         <div class="chart-container">
             <h3>Lead Reconciliation (Meta vs Salesforce)</h3>
-            <p class="section-note">Meta over-reports leads due to CAPI deduplication issues.</p>
+            <p class="section-note">Gap = Meta-reported minus SF-confirmed. Positive (orange) = Meta over-reports; negative (teal) = test records in SF or Meta attribution lag on recent days.</p>
             <canvas id="chartReconciliation" style="max-height:250px;"></canvas>
         </div>
     </section>
