@@ -1,1 +1,427 @@
-"""\nSouled Meta Ads CPL Dashboard Generator\nReads cached JSON data from Windsor.ai (Meta) and Salesforce,\nmerges them, computes CPL metrics, and generates a self-contained HTML dashboard.\n\nRun with --fetch to pull live data from Windsor.ai REST API + Salesforce\n(requires WINDSOR_API_KEY, SF_USERNAME, SF_PASSWORD, SF_SECURITY_TOKEN env vars).\n"""\nimport argparse\nimport json\nimport os\nimport requests\nimport pandas as pd\nfrom datetime import datetime, timedelta\nfrom jinja2 import Environment, FileSystemLoader\n\nBASE_DIR = os.path.dirname(os.path.abspath(__file__))\nDATA_DIR = os.path.join(BASE_DIR, \"data\")\nTEMPLATE_DIR = os.path.join(BASE_DIR, \"templates\")\nOUTPUT_FILE = os.path.join(BASE_DIR, \"dashboard.html\")\n\n\ndef _windsor_fetch(fields, date_from, date_to):\n    \"\"\"Call Windsor.ai REST API and return list of records.\"\"\"\n    api_key = os.environ[\"WINDSOR_API_KEY\"]\n    params = {\n        \"api_key\": api_key,\n        \"date_from\": date_from,\n        \"date_to\": date_to,\n        \"fields\": \",\".join(fields),\n        \"account_id\": \"548376353109705\",\n    }\n    resp = requests.get(\"https://connectors.windsor.ai/facebook\", params=params, timeout=120)\n    resp.raise_for_status()\n    data = resp.json()\n    # Windsor REST API returns {\"data\": [...]} or {\"result\": [...]}\n    return data.get(\"data\") or data.get(\"result\") or []\n\n\ndef fetch_and_save_meta_data():\n    \"\"\"Fetch all three Meta datasets from Windsor.ai REST API and save to data/.\"\"\"\n    date_from = (datetime.now() - timedelta(days=183)).strftime(\"%Y-%m-%d\")\n    date_to = datetime.now().strftime(\"%Y-%m-%d\")\n    print(f\"Fetching Meta data {date_from} → {date_to} from Windsor.ai REST API...\")\n\n    daily_fields = [\"date\", \"campaign\", \"spend\", \"clicks\", \"link_clicks\", \"impressions\",\n                    \"cpc\", \"ctr\", \"actions_lead\", \"actions_complete_registration\",\n                    \"cost_per_action_type_lead\", \"cost_per_action_type_complete_registration\"]\n    country_fields = [\"date\", \"campaign\", \"country\", \"spend\", \"clicks\", \"impressions\",\n                      \"actions_lead\", \"actions_complete_registration\"]\n    creative_fields = [\"date\", \"campaign\", \"ad_name\", \"spend\", \"clicks\", \"link_clicks\",\n                       \"actions_lead\", \"actions_complete_registration\"]\n\n    for fields, filename in [\n        (daily_fields, \"meta_daily.json\"),\n        (country_fields, \"meta_country.json\"),\n        (creative_fields, \"meta_creative.json\"),\n    ]:\n        records = _windsor_fetch(fields, date_from, date_to)\n        path = os.path.join(DATA_DIR, filename)\n        with open(path, \"w\") as f:\n            json.dump({\"result\": records}, f)\n        print(f\"  Saved {len(records)} rows → {filename}\")\n\n\ndef fetch_and_save_sf_data():\n    \"\"\"Fetch Salesforce registrations via simple-salesforce and save to data/.\"\"\"\n    from simple_salesforce import Salesforce\n    print(\"Fetching Salesforce registrations...\")\n    sf = Salesforce(\n        username=os.environ[\"SF_USERNAME\"],\n        password=os.environ[\"SF_PASSWORD\"],\n        security_token=os.environ[\"SF_SECURITY_TOKEN\"],\n    )\n    soql = (\n        \"SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, \"\n        \"utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c \"\n        \"FROM Registration__c \"\n        \"WHERE (utm_source__c = 'facebook' OR utm_source__c = 'ig' OR \"\n        \"utm_source__c = 'fb' OR utm_source__c = 'Meta') \"\n        \"AND Student__r.Test_Old__c = false \"\n        \"AND (NOT Student__r.Name LIKE '%test%') \"\n        \"AND CreatedDate >= 2025-10-01T00:00:00Z \"\n        \"ORDER BY CreatedDate DESC\"\n    )\n    result = sf.query_all(soql)\n    records = result[\"records\"]\n    # Remove Salesforce metadata field\n    for r in records:\n        r.pop(\"attributes\", None)\n    path = os.path.join(DATA_DIR, \"sf_registrations.json\")\n    with open(path, \"w\") as f:\n        json.dump({\"result\": {\"records\": records, \"totalSize\": len(records)}}, f)\n    print(f\"  Saved {len(records)} registrations → sf_registrations.json\")\n\n\ndef _exclude_today(df):\n    \"\"\"Drop rows from today (partial day skews trends and CPL).\"\"\"\n    today = pd.Timestamp(datetime.now().date())\n    return df[df[\"date\"] < today].copy()\n\n\ndef load_meta_daily():\n    with open(os.path.join(DATA_DIR, \"meta_daily.json\")) as f:\n        data = json.load(f)\n    rows = data[\"result\"]\n    df = pd.DataFrame(rows)\n    df[\"date\"] = pd.to_datetime(df[\"date\"])\n    for col in [\"spend\", \"clicks\", \"link_clicks\", \"impressions\", \"cpc\", \"ctr\",\n                 \"actions_lead\", \"actions_complete_registration\",\n                 \"cost_per_action_type_lead\", \"cost_per_action_type_complete_registration\"]:\n        if col in df.columns:\n            df[col] = pd.to_numeric(df[col], errors=\"coerce\").fillna(0)\n    # Combine both conversion events: older campaigns used complete_registration, newer use lead\n    df[\"meta_conversions\"] = df[\"actions_complete_registration\"] + df[\"actions_lead\"]\n    return _exclude_today(df)\n\n\ndef load_meta_country():\n    with open(os.path.join(DATA_DIR, \"meta_country.json\")) as f:\n        data = json.load(f)\n    rows = data[\"result\"]\n    df = pd.DataFrame(rows)\n    df[\"date\"] = pd.to_datetime(df[\"date\"])\n    for col in [\"spend\", \"clicks\", \"impressions\", \"actions_lead\", \"actions_complete_registration\"]:\n        if col in df.columns:\n            df[col] = pd.to_numeric(df[col], errors=\"coerce\").fillna(0)\n    df[\"meta_conversions\"] = df[\"actions_complete_registration\"] + df[\"actions_lead\"]\n    return _exclude_today(df)\n\n\ndef load_meta_creative():\n    with open(os.path.join(DATA_DIR, \"meta_creative.json\")) as f:\n        data = json.load(f)\n    rows = data[\"result\"]\n    df = pd.DataFrame(rows)\n    df[\"date\"] = pd.to_datetime(df[\"date\"])\n    for col in [\"spend\", \"clicks\", \"link_clicks\", \"actions_lead\", \"actions_complete_registration\"]:\n        if col in df.columns:\n            df[col] = pd.to_numeric(df[col], errors=\"coerce\").fillna(0)\n    df[\"meta_conversions\"] = df[\"actions_complete_registration\"] + df[\"actions_lead\"]\n    return _exclude_today(df)\n\n\ndef load_sf_registrations():\n    with open(os.path.join(DATA_DIR, \"sf_registrations.json\")) as f:\n        data = json.load(f)\n    # Accept both the `sf` CLI wrapper format AND a plain {\"records\": [...]} or list\n    if isinstance(data, list):\n        records = data\n    elif \"records\" in data:\n        records = data[\"records\"]\n    else:\n        records = data[\"result\"][\"records\"]\n    df = pd.DataFrame(records)\n    df[\"date\"] = pd.to_datetime(df[\"CreatedDate\"]).dt.tz_localize(None).dt.normalize()\n    df[\"campaign\"] = df[\"utm_campaign__c\"].fillna(\"Unattributed\")\n    df[\"ad_content\"] = df[\"utm_content__c\"].fillna(\"Unknown\")\n    df[\"status\"] = df[\"Status__c\"]\n    df[\"disqualified\"] = df[\"Disqualified__c\"].fillna(False) if \"Disqualified__c\" in df.columns else False\n    return _exclude_today(df)\n\n\ndef compute_iso_week(dt):\n    return dt.isocalendar()[1]\n\n\ndef aggregate_by_period(meta_df, sf_df, period=\"W\"):\n    \"\"\"Aggregate Meta + SF data by period and compute CPL.\"\"\"\n    if period == \"D\":\n        meta_df[\"period\"] = meta_df[\"date\"].dt.strftime(\"%Y-%m-%d\")\n        sf_df[\"period\"] = sf_df[\"date\"].dt.strftime(\"%Y-%m-%d\")\n        sort_key = \"period\"\n    elif period == \"W\":\n        meta_df[\"period\"] = meta_df[\"date\"].dt.to_period(\"W\").apply(lambda r: str(r.start_time.date()))\n        sf_df[\"period\"] = sf_df[\"date\"].dt.to_period(\"W\").apply(lambda r: str(r.start_time.date()))\n        sort_key = \"period\"\n    else:  # Monthly\n        meta_df[\"period\"] = meta_df[\"date\"].dt.strftime(\"%Y-%m\")\n        sf_df[\"period\"] = sf_df[\"date\"].dt.strftime(\"%Y-%m\")\n        sort_key = \"period\"\n\n    meta_agg = meta_df.groupby(\"period\").agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        link_clicks=(\"link_clicks\", \"sum\"),\n        impressions=(\"impressions\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index()\n\n    sf_agg = sf_df.groupby(\"period\").agg(\n        sf_leads=(\"Id\", \"count\"),\n        sf_disqualified=(\"disqualified\", \"sum\"),\n    ).reset_index()\n\n    merged = meta_agg.merge(sf_agg, on=\"period\", how=\"outer\").fillna(0)\n    merged = merged.sort_values(sort_key)\n\n    merged[\"cpc\"] = (merged[\"spend\"] / merged[\"clicks\"].replace(0, float(\"nan\"))).round(2)\n    merged[\"ctr\"] = ((merged[\"clicks\"] / merged[\"impressions\"].replace(0, float(\"nan\"))) * 100).round(2)\n    merged[\"true_cpl\"] = (merged[\"spend\"] / merged[\"sf_leads\"].replace(0, float(\"nan\"))).round(2)\n    merged[\"meta_cpl\"] = (merged[\"spend\"] / merged[\"meta_leads\"].replace(0, float(\"nan\"))).round(2)\n    merged[\"lead_gap\"] = merged[\"meta_leads\"] - merged[\"sf_leads\"]\n    merged[\"lead_gap_pct\"] = ((merged[\"lead_gap\"] / merged[\"meta_leads\"].replace(0, float(\"nan\"))) * 100).round(1)\n    merged[\"conv_rate\"] = ((merged[\"sf_leads\"] / merged[\"clicks\"].replace(0, float(\"nan\"))) * 100).round(2)\n\n    merged = merged.fillna(0)\n    for col in merged.select_dtypes(include=[\"float64\"]).columns:\n        merged[col] = merged[col].replace([float(\"inf\"), float(\"-inf\")], 0)\n\n    return merged\n\n\ndef build_campaign_table(meta_df, sf_df):\n    meta_camp = meta_df.groupby(\"campaign\").agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        link_clicks=(\"link_clicks\", \"sum\"),\n        impressions=(\"impressions\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index()\n\n    sf_camp = sf_df.groupby(\"campaign\").agg(\n        sf_leads=(\"Id\", \"count\"),\n    ).reset_index()\n\n    merged = meta_camp.merge(sf_camp, on=\"campaign\", how=\"outer\").fillna(0)\n    merged[\"cpc\"] = (merged[\"spend\"] / merged[\"clicks\"].replace(0, float(\"nan\"))).round(2)\n    merged[\"ctr\"] = ((merged[\"clicks\"] / merged[\"impressions\"].replace(0, float(\"nan\"))) * 100).round(2)\n    merged[\"true_cpl\"] = (merged[\"spend\"] / merged[\"sf_leads\"].replace(0, float(\"nan\"))).round(2)\n    merged[\"conv_rate\"] = ((merged[\"sf_leads\"] / merged[\"clicks\"].replace(0, float(\"nan\"))) * 100).round(2)\n    merged = merged.fillna(0).replace([float(\"inf\"), float(\"-inf\")], 0)\n    merged = merged.sort_values(\"spend\", ascending=False)\n    return merged\n\n\ndef build_creative_table(creative_df, sf_df):\n    creative_agg = creative_df.groupby([\"ad_name\", \"campaign\"]).agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        link_clicks=(\"link_clicks\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index()\n\n    sf_content = sf_df.groupby(\"ad_content\").agg(\n        sf_leads=(\"Id\", \"count\"),\n    ).reset_index().rename(columns={\"ad_content\": \"ad_name\"})\n\n    merged = creative_agg.merge(sf_content, on=\"ad_name\", how=\"left\").fillna(0)\n    merged[\"true_cpl\"] = (merged[\"spend\"] / merged[\"sf_leads\"].replace(0, float(\"nan\"))).round(2)\n    merged = merged.fillna(0).replace([float(\"inf\"), float(\"-inf\")], 0)\n    merged = merged.sort_values(\"spend\", ascending=False)\n    return merged\n\n\ndef build_country_table(country_df):\n    country_agg = country_df.groupby(\"country\").agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        impressions=(\"impressions\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index()\n    country_agg[\"cpc\"] = (country_agg[\"spend\"] / country_agg[\"clicks\"].replace(0, float(\"nan\"))).round(2)\n    country_agg[\"meta_cpl\"] = (country_agg[\"spend\"] / country_agg[\"meta_leads\"].replace(0, float(\"nan\"))).round(2)\n    country_agg = country_agg.fillna(0).replace([float(\"inf\"), float(\"-inf\")], 0)\n    country_agg = country_agg.sort_values(\"spend\", ascending=False)\n    return country_agg\n\n\ndef build_campaign_daily(meta_df):\n    df = meta_df.copy()\n    df[\"date_str\"] = df[\"date\"].dt.strftime(\"%Y-%m-%d\")\n    agg = df.groupby([\"date_str\", \"campaign\"]).agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        impressions=(\"impressions\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index().rename(columns={\"date_str\": \"date\"})\n    return agg.sort_values([\"date\", \"campaign\"])\n\n\ndef build_country_daily(country_df):\n    df = country_df.copy()\n    df[\"date_str\"] = df[\"date\"].dt.strftime(\"%Y-%m-%d\")\n    agg = df.groupby([\"date_str\", \"country\"]).agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        impressions=(\"impressions\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index().rename(columns={\"date_str\": \"date\"})\n    return agg.sort_values([\"date\", \"country\"])\n\n\ndef build_creative_daily(creative_df):\n    df = creative_df.copy()\n    df[\"date_str\"] = df[\"date\"].dt.strftime(\"%Y-%m-%d\")\n    agg = df.groupby([\"date_str\", \"ad_name\", \"campaign\"]).agg(\n        spend=(\"spend\", \"sum\"),\n        clicks=(\"clicks\", \"sum\"),\n        meta_leads=(\"meta_conversions\", \"sum\"),\n    ).reset_index().rename(columns={\"date_str\": \"date\"})\n    return agg.sort_values([\"date\", \"ad_name\"])\n\n\ndef build_sf_reg_daily(sf_df):\n    result = sf_df[[\"date\", \"campaign\", \"ad_content\", \"status\"]].copy()\n    result[\"date\"] = result[\"date\"].dt.strftime(\"%Y-%m-%d\")\n    return result.to_dict(\"records\")\n\n\ndef build_status_funnel(sf_df):\n    status_counts = sf_df[\"status\"].value_counts().to_dict()\n    total = len(sf_df)\n    funnel = {\n        \"total_registered\": total,\n        \"scheduled\": status_counts.get(\"Scheduled\", 0),\n        \"meeting_with_coach\": status_counts.get(\"Meeting with a Coach\", 0),\n        \"stopped_meeting\": status_counts.get(\"Stopped Meeting with a Coach\", 0),\n        \"never_matched\": status_counts.get(\"Never Matched\", 0),\n        \"matched_new_coach\": status_counts.get(\"Matched with new coach\", 0),\n        \"being_matched\": status_counts.get(\"Being matched with another coach\", 0),\n    }\n    funnel[\"ever_coached\"] = funnel[\"meeting_with_coach\"] + funnel[\"stopped_meeting\"] + funnel[\"matched_new_coach\"]\n    funnel[\"coach_match_rate\"] = round(funnel[\"ever_coached\"] / total * 100, 1) if total > 0 else 0\n    return funnel\n\n\ndef compute_kpis(meta_df, sf_df):\n    total_spend = meta_df[\"spend\"].sum()\n    total_clicks = meta_df[\"clicks\"].sum()\n    total_impressions = meta_df[\"impressions\"].sum()\n    total_meta_leads = meta_df[\"meta_conversions\"].sum()\n    total_sf_leads = len(sf_df)\n    true_cpl = round(total_spend / total_sf_leads, 2) if total_sf_leads > 0 else 0\n    meta_cpl = round(total_spend / total_meta_leads, 2) if total_meta_leads > 0 else 0\n    lead_gap_pct = round((total_meta_leads - total_sf_leads) / total_meta_leads * 100, 1) if total_meta_leads > 0 else 0\n    cpc = round(total_spend / total_clicks, 2) if total_clicks > 0 else 0\n    ctr = round(total_clicks / total_impressions * 100, 2) if total_impressions > 0 else 0\n\n    funnel = build_status_funnel(sf_df)\n\n    return {\n        \"total_spend\": round(total_spend, 2),\n        \"total_clicks\": int(total_clicks),\n        \"total_impressions\": int(total_impressions),\n        \"total_meta_leads\": int(total_meta_leads),\n        \"total_sf_leads\": total_sf_leads,\n        \"true_cpl\": true_cpl,\n        \"meta_cpl\": meta_cpl,\n        \"lead_gap_pct\": lead_gap_pct,\n        \"cpc\": cpc,\n        \"ctr\": ctr,\n        \"coach_match_rate\": funnel[\"coach_match_rate\"],\n    }\n\n\ndef df_to_json_records(df):\n    \"\"\"Convert DataFrame to list of dicts, safe for JSON embedding.\"\"\"\n    return json.loads(df.to_json(orient=\"records\", date_format=\"iso\"))\n\n\ndef main():\n    print(\"Loading data...\")\n    meta_daily = load_meta_daily()\n    meta_country = load_meta_country()\n    meta_creative = load_meta_creative()\n    sf = load_sf_registrations()\n\n    date_min = meta_daily[\"date\"].min().strftime(\"%Y-%m-%d\")\n    date_max = meta_daily[\"date\"].max().strftime(\"%Y-%m-%d\")\n    print(f\"Meta data range: {date_min} to {date_max}\")\n    print(f\"SF registrations: {len(sf)}\")\n\n    print(\"Computing aggregations...\")\n    weekly = aggregate_by_period(meta_daily.copy(), sf.copy(), \"W\")\n    monthly = aggregate_by_period(meta_daily.copy(), sf.copy(), \"M\")\n    daily = aggregate_by_period(meta_daily.copy(), sf.copy(), \"D\")\n\n    campaign_table = build_campaign_table(meta_daily, sf)\n    creative_table = build_creative_table(meta_creative, sf)\n    country_table = build_country_table(meta_country)\n    status_funnel = build_status_funnel(sf)\n    kpis = compute_kpis(meta_daily, sf)\n    campaign_daily = build_campaign_daily(meta_daily)\n    country_daily = build_country_daily(meta_country)\n    creative_daily = build_creative_daily(meta_creative)\n    sf_reg_daily = build_sf_reg_daily(sf)\n\n    print(\"Generating dashboard...\")\n    dashboard_data = {\n        \"generated_at\": datetime.now().strftime(\"%Y-%m-%d %H:%M\"),\n        \"date_min\": date_min,\n        \"date_max\": date_max,\n        \"kpis\": kpis,\n        \"weekly\": df_to_json_records(weekly),\n        \"monthly\": df_to_json_records(monthly),\n        \"daily\": df_to_json_records(daily),\n        \"campaigns\": df_to_json_records(campaign_table),\n        \"creatives\": df_to_json_records(creative_table),\n        \"countries\": df_to_json_records(country_table),\n        \"funnel\": status_funnel,\n        \"campaign_daily\": df_to_json_records(campaign_daily),\n        \"country_daily\": df_to_json_records(country_daily),\n        \"creative_daily\": df_to_json_records(creative_daily),\n        \"sf_reg_daily\": sf_reg_daily,\n    }\n\n    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))\n    template = env.get_template(\"dashboard.html.j2\")\n    html = template.render(data=json.dumps(dashboard_data, default=str))\n\n    with open(OUTPUT_FILE, \"w\", encoding=\"utf-8\") as f:\n        f.write(html)\n\n    print(f\"Dashboard generated: {OUTPUT_FILE}\")\n    print(f\"KPIs: Spend=${kpis['total_spend']:,.2f} | SF Leads={kpis['total_sf_leads']} | True CPL=${kpis['true_cpl']:.2f} | Coach Match={kpis['coach_match_rate']}%\")\n\n\nif __name__ == \"__main__\":\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--fetch\", action=\"store_true\",\n                        help=\"Fetch live data from Windsor.ai + Salesforce before generating\")\n    args = parser.parse_args()\n    if args.fetch:\n        fetch_and_save_meta_data()\n        fetch_and_save_sf_data()\n    main()\n
+"""
+Souled Meta Ads CPL Dashboard Generator
+Reads cached JSON data from Windsor.ai (Meta) and Salesforce,
+merges them, computes CPL metrics, and generates a self-contained HTML dashboard.
+
+Run with --fetch to pull live data from Windsor.ai REST API + Salesforce
+(requires WINDSOR_API_KEY, SF_USERNAME, SF_PASSWORD, SF_SECURITY_TOKEN env vars).
+"""
+import argparse
+import json
+import os
+import requests
+import pandas as pd
+from datetime import datetime, timedelta
+from jinja2 import Environment, FileSystemLoader
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+OUTPUT_FILE = os.path.join(BASE_DIR, "dashboard.html")
+
+
+def _windsor_fetch(fields, date_from, date_to):
+    """Call Windsor.ai REST API and return list of records."""
+    api_key = os.environ["WINDSOR_API_KEY"]
+    params = {
+        "api_key": api_key,
+        "date_from": date_from,
+        "date_to": date_to,
+        "fields": ",".join(fields),
+        "account_id": "548376353109705",
+    }
+    resp = requests.get("https://connectors.windsor.ai/facebook", params=params, timeout=120)
+    resp.raise_for_status()
+    data = resp.json()
+    # Windsor REST API returns {"data": [...]} or {"result": [...]}
+    return data.get("data") or data.get("result") or []
+
+
+def fetch_and_save_meta_data():
+    """Fetch all three Meta datasets from Windsor.ai REST API and save to data/."""
+    date_from = (datetime.now() - timedelta(days=183)).strftime("%Y-%m-%d")
+    date_to = datetime.now().strftime("%Y-%m-%d")
+    print(f"Fetching Meta data {date_from} → {date_to} from Windsor.ai REST API...")
+
+    daily_fields = ["date", "campaign", "spend", "clicks", "link_clicks", "impressions",
+                    "cpc", "ctr", "actions_lead", "actions_complete_registration",
+                    "cost_per_action_type_lead", "cost_per_action_type_complete_registration"]
+    country_fields = ["date", "campaign", "country", "spend", "clicks", "impressions",
+                      "actions_lead", "actions_complete_registration"]
+    creative_fields = ["date", "campaign", "ad_name", "spend", "clicks", "link_clicks",
+                       "actions_lead", "actions_complete_registration"]
+
+    for fields, filename in [
+        (daily_fields, "meta_daily.json"),
+        (country_fields, "meta_country.json"),
+        (creative_fields, "meta_creative.json"),
+    ]:
+        records = _windsor_fetch(fields, date_from, date_to)
+        path = os.path.join(DATA_DIR, filename)
+        with open(path, "w") as f:
+            json.dump({"result": records}, f)
+        print(f"  Saved {len(records)} rows → {filename}")
+
+
+def fetch_and_save_sf_data():
+    """Fetch Salesforce registrations via simple-salesforce and save to data/."""
+    from simple_salesforce import Salesforce
+    print("Fetching Salesforce registrations...")
+    sf = Salesforce(
+        username=os.environ["SF_USERNAME"],
+        password=os.environ["SF_PASSWORD"],
+        security_token=os.environ["SF_SECURITY_TOKEN"],
+    )
+    soql = (
+        "SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, "
+        "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c "
+        "FROM Registration__c "
+        "WHERE (utm_source__c = 'facebook' OR utm_source__c = 'ig' OR "
+        "utm_source__c = 'fb' OR utm_source__c = 'Meta') "
+        "AND Student__r.Test_Old__c = false "
+        "AND (NOT Student__r.Name LIKE '%test%') "
+        "AND CreatedDate >= 2025-10-01T00:00:00Z "
+        "ORDER BY CreatedDate DESC"
+    )
+    result = sf.query_all(soql)
+    records = result["records"]
+    # Remove Salesforce metadata field
+    for r in records:
+        r.pop("attributes", None)
+    path = os.path.join(DATA_DIR, "sf_registrations.json")
+    with open(path, "w") as f:
+        json.dump({"result": {"records": records, "totalSize": len(records)}}, f)
+    print(f"  Saved {len(records)} registrations → sf_registrations.json")
+
+
+def _exclude_today(df):
+    """Drop rows from today (partial day skews trends and CPL)."""
+    today = pd.Timestamp(datetime.now().date())
+    return df[df["date"] < today].copy()
+
+
+def load_meta_daily():
+    with open(os.path.join(DATA_DIR, "meta_daily.json")) as f:
+        data = json.load(f)
+    rows = data["result"]
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    for col in ["spend", "clicks", "link_clicks", "impressions", "cpc", "ctr",
+                 "actions_lead", "actions_complete_registration",
+                 "cost_per_action_type_lead", "cost_per_action_type_complete_registration"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    # Combine both conversion events: older campaigns used complete_registration, newer use lead
+    df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
+    return _exclude_today(df)
+
+
+def load_meta_country():
+    with open(os.path.join(DATA_DIR, "meta_country.json")) as f:
+        data = json.load(f)
+    rows = data["result"]
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    for col in ["spend", "clicks", "impressions", "actions_lead", "actions_complete_registration"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
+    return _exclude_today(df)
+
+
+def load_meta_creative():
+    with open(os.path.join(DATA_DIR, "meta_creative.json")) as f:
+        data = json.load(f)
+    rows = data["result"]
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    for col in ["spend", "clicks", "link_clicks", "actions_lead", "actions_complete_registration"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
+    return _exclude_today(df)
+
+
+def load_sf_registrations():
+    with open(os.path.join(DATA_DIR, "sf_registrations.json")) as f:
+        data = json.load(f)
+    # Accept both the `sf` CLI wrapper format AND a plain {"records": [...]} or list
+    if isinstance(data, list):
+        records = data
+    elif "records" in data:
+        records = data["records"]
+    else:
+        records = data["result"]["records"]
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["CreatedDate"]).dt.tz_localize(None).dt.normalize()
+    df["campaign"] = df["utm_campaign__c"].fillna("Unattributed")
+    df["ad_content"] = df["utm_content__c"].fillna("Unknown")
+    df["status"] = df["Status__c"]
+    df["disqualified"] = df["Disqualified__c"].fillna(False) if "Disqualified__c" in df.columns else False
+    return _exclude_today(df)
+
+
+def compute_iso_week(dt):
+    return dt.isocalendar()[1]
+
+
+def aggregate_by_period(meta_df, sf_df, period="W"):
+    """Aggregate Meta + SF data by period and compute CPL."""
+    if period == "D":
+        meta_df["period"] = meta_df["date"].dt.strftime("%Y-%m-%d")
+        sf_df["period"] = sf_df["date"].dt.strftime("%Y-%m-%d")
+        sort_key = "period"
+    elif period == "W":
+        meta_df["period"] = meta_df["date"].dt.to_period("W").apply(lambda r: str(r.start_time.date()))
+        sf_df["period"] = sf_df["date"].dt.to_period("W").apply(lambda r: str(r.start_time.date()))
+        sort_key = "period"
+    else:  # Monthly
+        meta_df["period"] = meta_df["date"].dt.strftime("%Y-%m")
+        sf_df["period"] = sf_df["date"].dt.strftime("%Y-%m")
+        sort_key = "period"
+
+    meta_agg = meta_df.groupby("period").agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        link_clicks=("link_clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index()
+
+    sf_agg = sf_df.groupby("period").agg(
+        sf_leads=("Id", "count"),
+        sf_disqualified=("disqualified", "sum"),
+    ).reset_index()
+
+    merged = meta_agg.merge(sf_agg, on="period", how="outer").fillna(0)
+    merged = merged.sort_values(sort_key)
+
+    merged["cpc"] = (merged["spend"] / merged["clicks"].replace(0, float("nan"))).round(2)
+    merged["ctr"] = ((merged["clicks"] / merged["impressions"].replace(0, float("nan"))) * 100).round(2)
+    merged["true_cpl"] = (merged["spend"] / merged["sf_leads"].replace(0, float("nan"))).round(2)
+    merged["meta_cpl"] = (merged["spend"] / merged["meta_leads"].replace(0, float("nan"))).round(2)
+    merged["lead_gap"] = merged["meta_leads"] - merged["sf_leads"]
+    merged["lead_gap_pct"] = ((merged["lead_gap"] / merged["meta_leads"].replace(0, float("nan"))) * 100).round(1)
+    merged["conv_rate"] = ((merged["sf_leads"] / merged["clicks"].replace(0, float("nan"))) * 100).round(2)
+
+    merged = merged.fillna(0)
+    for col in merged.select_dtypes(include=["float64"]).columns:
+        merged[col] = merged[col].replace([float("inf"), float("-inf")], 0)
+
+    return merged
+
+
+def build_campaign_table(meta_df, sf_df):
+    meta_camp = meta_df.groupby("campaign").agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        link_clicks=("link_clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index()
+
+    sf_camp = sf_df.groupby("campaign").agg(
+        sf_leads=("Id", "count"),
+    ).reset_index()
+
+    merged = meta_camp.merge(sf_camp, on="campaign", how="outer").fillna(0)
+    merged["cpc"] = (merged["spend"] / merged["clicks"].replace(0, float("nan"))).round(2)
+    merged["ctr"] = ((merged["clicks"] / merged["impressions"].replace(0, float("nan"))) * 100).round(2)
+    merged["true_cpl"] = (merged["spend"] / merged["sf_leads"].replace(0, float("nan"))).round(2)
+    merged["conv_rate"] = ((merged["sf_leads"] / merged["clicks"].replace(0, float("nan"))) * 100).round(2)
+    merged = merged.fillna(0).replace([float("inf"), float("-inf")], 0)
+    merged = merged.sort_values("spend", ascending=False)
+    return merged
+
+
+def build_creative_table(creative_df, sf_df):
+    creative_agg = creative_df.groupby(["ad_name", "campaign"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        link_clicks=("link_clicks", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index()
+
+    sf_content = sf_df.groupby("ad_content").agg(
+        sf_leads=("Id", "count"),
+    ).reset_index().rename(columns={"ad_content": "ad_name"})
+
+    merged = creative_agg.merge(sf_content, on="ad_name", how="left").fillna(0)
+    merged["true_cpl"] = (merged["spend"] / merged["sf_leads"].replace(0, float("nan"))).round(2)
+    merged = merged.fillna(0).replace([float("inf"), float("-inf")], 0)
+    merged = merged.sort_values("spend", ascending=False)
+    return merged
+
+
+def build_country_table(country_df):
+    country_agg = country_df.groupby("country").agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index()
+    country_agg["cpc"] = (country_agg["spend"] / country_agg["clicks"].replace(0, float("nan"))).round(2)
+    country_agg["meta_cpl"] = (country_agg["spend"] / country_agg["meta_leads"].replace(0, float("nan"))).round(2)
+    country_agg = country_agg.fillna(0).replace([float("inf"), float("-inf")], 0)
+    country_agg = country_agg.sort_values("spend", ascending=False)
+    return country_agg
+
+
+def build_campaign_daily(meta_df):
+    df = meta_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "campaign"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "campaign"])
+
+
+def build_country_daily(country_df):
+    df = country_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "country"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "country"])
+
+
+def build_creative_daily(creative_df):
+    df = creative_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "ad_name", "campaign"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "ad_name"])
+
+
+def build_sf_reg_daily(sf_df):
+    result = sf_df[["date", "campaign", "ad_content", "status"]].copy()
+    result["date"] = result["date"].dt.strftime("%Y-%m-%d")
+    return result.to_dict("records")
+
+
+def build_status_funnel(sf_df):
+    status_counts = sf_df["status"].value_counts().to_dict()
+    total = len(sf_df)
+    funnel = {
+        "total_registered": total,
+        "scheduled": status_counts.get("Scheduled", 0),
+        "meeting_with_coach": status_counts.get("Meeting with a Coach", 0),
+        "stopped_meeting": status_counts.get("Stopped Meeting with a Coach", 0),
+        "never_matched": status_counts.get("Never Matched", 0),
+        "matched_new_coach": status_counts.get("Matched with new coach", 0),
+        "being_matched": status_counts.get("Being matched with another coach", 0),
+    }
+    funnel["ever_coached"] = funnel["meeting_with_coach"] + funnel["stopped_meeting"] + funnel["matched_new_coach"]
+    funnel["coach_match_rate"] = round(funnel["ever_coached"] / total * 100, 1) if total > 0 else 0
+    return funnel
+
+
+def compute_kpis(meta_df, sf_df):
+    total_spend = meta_df["spend"].sum()
+    total_clicks = meta_df["clicks"].sum()
+    total_impressions = meta_df["impressions"].sum()
+    total_meta_leads = meta_df["meta_conversions"].sum()
+    total_sf_leads = len(sf_df)
+    true_cpl = round(total_spend / total_sf_leads, 2) if total_sf_leads > 0 else 0
+    meta_cpl = round(total_spend / total_meta_leads, 2) if total_meta_leads > 0 else 0
+    lead_gap_pct = round((total_meta_leads - total_sf_leads) / total_meta_leads * 100, 1) if total_meta_leads > 0 else 0
+    cpc = round(total_spend / total_clicks, 2) if total_clicks > 0 else 0
+    ctr = round(total_clicks / total_impressions * 100, 2) if total_impressions > 0 else 0
+
+    funnel = build_status_funnel(sf_df)
+
+    return {
+        "total_spend": round(total_spend, 2),
+        "total_clicks": int(total_clicks),
+        "total_impressions": int(total_impressions),
+        "total_meta_leads": int(total_meta_leads),
+        "total_sf_leads": total_sf_leads,
+        "true_cpl": true_cpl,
+        "meta_cpl": meta_cpl,
+        "lead_gap_pct": lead_gap_pct,
+        "cpc": cpc,
+        "ctr": ctr,
+        "coach_match_rate": funnel["coach_match_rate"],
+    }
+
+
+def df_to_json_records(df):
+    """Convert DataFrame to list of dicts, safe for JSON embedding."""
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
+def main():
+    print("Loading data...")
+    meta_daily = load_meta_daily()
+    meta_country = load_meta_country()
+    meta_creative = load_meta_creative()
+    sf = load_sf_registrations()
+
+    date_min = meta_daily["date"].min().strftime("%Y-%m-%d")
+    date_max = meta_daily["date"].max().strftime("%Y-%m-%d")
+    print(f"Meta data range: {date_min} to {date_max}")
+    print(f"SF registrations: {len(sf)}")
+
+    print("Computing aggregations...")
+    weekly = aggregate_by_period(meta_daily.copy(), sf.copy(), "W")
+    monthly = aggregate_by_period(meta_daily.copy(), sf.copy(), "M")
+    daily = aggregate_by_period(meta_daily.copy(), sf.copy(), "D")
+
+    campaign_table = build_campaign_table(meta_daily, sf)
+    creative_table = build_creative_table(meta_creative, sf)
+    country_table = build_country_table(meta_country)
+    status_funnel = build_status_funnel(sf)
+    kpis = compute_kpis(meta_daily, sf)
+    campaign_daily = build_campaign_daily(meta_daily)
+    country_daily = build_country_daily(meta_country)
+    creative_daily = build_creative_daily(meta_creative)
+    sf_reg_daily = build_sf_reg_daily(sf)
+
+    print("Generating dashboard...")
+    dashboard_data = {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "date_min": date_min,
+        "date_max": date_max,
+        "kpis": kpis,
+        "weekly": df_to_json_records(weekly),
+        "monthly": df_to_json_records(monthly),
+        "daily": df_to_json_records(daily),
+        "campaigns": df_to_json_records(campaign_table),
+        "creatives": df_to_json_records(creative_table),
+        "countries": df_to_json_records(country_table),
+        "funnel": status_funnel,
+        "campaign_daily": df_to_json_records(campaign_daily),
+        "country_daily": df_to_json_records(country_daily),
+        "creative_daily": df_to_json_records(creative_daily),
+        "sf_reg_daily": sf_reg_daily,
+    }
+
+    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    template = env.get_template("dashboard.html.j2")
+    html = template.render(data=json.dumps(dashboard_data, default=str))
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    print(f"Dashboard generated: {OUTPUT_FILE}")
+    print(f"KPIs: Spend=${kpis['total_spend']:,.2f} | SF Leads={kpis['total_sf_leads']} | True CPL=${kpis['true_cpl']:.2f} | Coach Match={kpis['coach_match_rate']}%")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fetch", action="store_true",
+                        help="Fetch live data from Windsor.ai + Salesforce before generating")
+    args = parser.parse_args()
+    if args.fetch:
+        fetch_and_save_meta_data()
+        fetch_and_save_sf_data()
+    main()
