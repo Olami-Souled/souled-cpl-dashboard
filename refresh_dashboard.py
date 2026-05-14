@@ -51,7 +51,7 @@ def fetch_and_save_meta_data():
     creative_fields = ["date", "campaign", "ad_name", "spend", "clicks", "link_clicks",
                        "actions_lead", "actions_complete_registration"]
 
-    adset_fields = ["date", "campaign", "adset", "spend", "clicks", "link_clicks",
+    adset_fields = ["date", "campaign", "adset_name", "spend", "clicks", "link_clicks",
                     "impressions", "actions_lead", "actions_complete_registration"]
 
     for fields, filename in [
@@ -162,6 +162,9 @@ def load_meta_adset():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["meta_conversions"] = df.get("actions_complete_registration", 0) + df.get("actions_lead", 0)
+    # Normalize Windsor field name → internal name
+    if "adset_name" in df.columns and "adset" not in df.columns:
+        df = df.rename(columns={"adset_name": "adset"})
     return _exclude_today(df)
 
 
