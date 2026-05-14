@@ -206,12 +206,12 @@
     </section>
 
     <section class="section">
-        <h3>Ad Set Performance</h3>
+        <h3>Ad Set Performance <span style="font-size:11px;font-weight:400;color:var(--text-secondary);margin-left:8px;">SF Leads &amp; True CPL not available at ad-set level (no UTM adset field in SF)</span></h3>
         <input type="text" class="search-input" id="adsetSearch" placeholder="Search ad sets..." oninput="dashboard.renderAdsets()">
         <div class="table-responsive"><table class="data-table" id="adsetTable"><thead><tr>
             <th>Ad Set</th><th>Campaign</th><th class="text-right">Spend</th><th class="text-right">Clicks</th>
             <th class="text-right">CPC</th><th class="text-right">CTR</th><th class="text-right">Meta Leads</th>
-            <th class="text-right">Meta CPL</th>
+            <th class="text-right">SF Leads</th><th class="text-right">True CPL</th><th class="text-right">Conv %</th>
         </tr></thead><tbody id="adsetBody"></tbody></table></div>
         <div class="expand-toggle" id="adsetExpand"></div>
     </section>
@@ -454,7 +454,7 @@ class Dashboard {
         const byadset = {};
         (this.raw.adset_daily || []).filter(r => r.date >= from && r.date <= to).forEach(r => {
             const key = (r.adset || 'Unknown') + '||' + (r.campaign || '');
-            if (!byadset[key]) byadset[key] = {adset: r.adset || 'Unknown', campaign: r.campaign || '', spend: 0, clicks: 0, impressions: 0, meta_leads: 0};
+            if (!byadset[key]) byadset[key] = {adset: r.adset || 'Unknown', campaign: r.campaign || '', spend: 0, clicks: 0, impressions: 0, meta_leads: 0, sf_leads: 0};
             const c = byadset[key];
             c.spend += r.spend; c.clicks += r.clicks; c.impressions += r.impressions; c.meta_leads += r.meta_leads;
         });
@@ -462,7 +462,8 @@ class Dashboard {
         data.forEach(r => {
             r.cpc = r.clicks ? +(r.spend / r.clicks).toFixed(2) : 0;
             r.ctr = r.impressions ? +(r.clicks / r.impressions * 100).toFixed(2) : 0;
-            r.meta_cpl = r.meta_leads ? +(r.spend / r.meta_leads).toFixed(2) : 0;
+            r.true_cpl = r.sf_leads ? +(r.spend / r.sf_leads).toFixed(2) : 0;
+            r.conv_rate = r.clicks ? +(r.sf_leads / r.clicks * 100).toFixed(2) : 0;
         });
         data.sort((a, b) => b.spend - a.spend);
         if (q) data = data.filter(r => r.adset.toLowerCase().includes(q) || r.campaign.toLowerCase().includes(q));
@@ -473,8 +474,10 @@ class Dashboard {
             <td class="text-right">${fmtN(r.clicks)}</td>
             <td class="text-right">${fmt$(r.cpc)}</td><td class="text-right">${fmtPct(r.ctr)}</td>
             <td class="text-right">${fmtN(r.meta_leads)}</td>
-            <td class="text-right">${r.meta_cpl > 0 ? fmt$(r.meta_cpl) : '—'}</td>
-        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:20px">No ad set data yet — will populate after next --fetch run</td></tr>';
+            <td class="text-right">${fmtN(r.sf_leads)}</td>
+            <td class="text-right ${r.true_cpl > 0 ? cplClass(r.true_cpl) : ''}">${r.true_cpl > 0 ? fmt$(r.true_cpl) : '—'}</td>
+            <td class="text-right">${fmtPct(r.conv_rate)}</td>
+        </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary);padding:20px">No ad set data yet — will populate after next --fetch run</td></tr>';
         this._expandBtn('adsetExpand', data.length, limit, 'adset', () => this.renderAdsets());
     }
 
