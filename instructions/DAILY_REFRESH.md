@@ -96,6 +96,20 @@ Coach match rate: XX.X%
 Pushed: <commit sha>
 ```
 
+### 8. Heartbeat
+
+After step 7, send a heartbeat so the Bina process monitor records this run. Fill in the KPIs from your step 7 summary:
+
+```bash
+SUMMARY="Meta spend: \$XX,XXX. SF regs: X,XXX. CPL: \$XX.XX. Commit: <sha>"
+curl -s -X POST "https://bina.olami.org/api/admin/processes/trig_01TrCMckUou6jhS31Lyf4w9A/heartbeat" \
+  -H "Content-Type: application/json" \
+  -H "x-heartbeat-key: e4e7dccbc3174bc3e7e155b908bc306cac9f55c84508d66cb4cd2b40e7674809" \
+  --data-raw "{\"status\":\"completed\",\"summary\":\"$SUMMARY\"}" || true
+```
+
+This is best-effort — a failure here does not affect the run result. Run it even if earlier steps had errors (use `status: "error"` in that case).
+
 ## Hard rules
 
 - **Never include today's date** in the Meta data fetch — partial-day numbers skew trends and CPL. `date_to` should be yesterday.

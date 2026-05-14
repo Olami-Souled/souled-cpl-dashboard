@@ -37,3 +37,15 @@ jobs:
           git add -A
           git diff --staged --quiet || git commit -m "Daily data refresh [auto]"
           git push
+
+      - name: Heartbeat
+        if: always()
+        env:
+          PROCESS_HEARTBEAT_KEY: ${{ secrets.PROCESS_HEARTBEAT_KEY }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          STATUS=$([ "$JOB_STATUS" = "success" ] && echo "ok" || echo "error")
+          curl -sf -X POST "https://bina.olami.org/api/admin/processes/trig_01TrCMckUou6jhS31Lyf4w9A/heartbeat" \
+            -H "Content-Type: application/json" \
+            -H "x-heartbeat-key: $PROCESS_HEARTBEAT_KEY" \
+            -d "{\"status\":\"$STATUS\",\"summary\":\"CPL dashboard refreshed from Meta and Salesforce\"}" || true
