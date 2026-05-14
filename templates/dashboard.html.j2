@@ -238,6 +238,17 @@
     </section>
 
     <section class="section">
+        <h3>Ad Set Performance</h3>
+        <input type="text" class="search-input" id="adsetSearch" placeholder="Search ad sets..." oninput="dashboard.renderAdsets()">
+        <div class="table-responsive"><table class="data-table" id="adsetTable"><thead><tr>
+            <th>Ad Set</th><th>Campaign</th><th class="text-right">Spend</th><th class="text-right">Clicks</th>
+            <th class="text-right">CPC</th><th class="text-right">CTR</th><th class="text-right">Meta Leads</th>
+            <th class="text-right">Meta CPL</th>
+        </tr></thead><tbody id="adsetBody"></tbody></table></div>
+        <div class="expand-toggle" id="adsetExpand"></div>
+    </section>
+
+    <section class="section">
         <h3>Ad Creative Performance</h3>
         <input type="text" class="search-input" id="creativeSearch" placeholder="Search ads..." oninput="dashboard.renderCreatives()">
         <div class="table-responsive"><table class="data-table" id="creativeTable"><thead><tr>
@@ -268,7 +279,7 @@ class Dashboard {
         this.view = 'W';
         this.sortCol = 'period'; this.sortDir = 'desc';
         this.charts = {};
-        this.expanded = { summary: false, campaign: false, creative: false };
+        this.expanded = { summary: false, campaign: false, adset: false, creative: false };
         this.init();
     }
 
@@ -324,6 +335,7 @@ class Dashboard {
         this.renderCharts(rows);
         this.renderSummary(rows);
         this.renderCampaigns();
+        this.renderAdsets();
         this.renderCreatives();
         this.renderReconciliation(rows);
     }
@@ -468,6 +480,36 @@ class Dashboard {
         this._expandBtn('campaignExpand', data.length, limit, 'campaign', () => this.renderCampaigns());
     }
 
+    renderAdsets() {
+        const {from, to} = this.getDateRange();
+        const q = (document.getElementById('adsetSearch').value || '').toLowerCase();
+        const byadset = {};
+        (this.raw.adset_daily || []).filter(r => r.date >= from && r.date <= to).forEach(r => {
+            const key = (r.adset || 'Unknown') + '||' + (r.campaign || '');
+            if (!byadset[key]) byadset[key] = {adset: r.adset || 'Unknown', campaign: r.campaign || '', spend: 0, clicks: 0, impressions: 0, meta_leads: 0};
+            const c = byadset[key];
+            c.spend += r.spend; c.clicks += r.clicks; c.impressions += r.impressions; c.meta_leads += r.meta_leads;
+        });
+        let data = Object.values(byadset);
+        data.forEach(r => {
+            r.cpc = r.clicks ? +(r.spend / r.clicks).toFixed(2) : 0;
+            r.ctr = r.impressions ? +(r.clicks / r.impressions * 100).toFixed(2) : 0;
+            r.meta_cpl = r.meta_leads ? +(r.spend / r.meta_leads).toFixed(2) : 0;
+        });
+        data.sort((a, b) => b.spend - a.spend);
+        if (q) data = data.filter(r => r.adset.toLowerCase().includes(q) || r.campaign.toLowerCase().includes(q));
+        const limit = 10;
+        const show = this.expanded.adset ? data : data.slice(0, limit);
+        document.getElementById('adsetBody').innerHTML = show.map(r => `<tr>
+            <td>${r.adset}</td><td>${r.campaign}</td><td class="text-right">${fmt$(r.spend)}</td>
+            <td class="text-right">${fmtN(r.clicks)}</td>
+            <td class="text-right">${fmt$(r.cpc)}</td><td class="text-right">${fmtPct(r.ctr)}</td>
+            <td class="text-right">${fmtN(r.meta_leads)}</td>
+            <td class="text-right">${r.meta_cpl > 0 ? fmt$(r.meta_cpl) : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:20px">No ad set data yet — will populate after next --fetch run</td></tr>';
+        this._expandBtn('adsetExpand', data.length, limit, 'adset', () => this.renderAdsets());
+    }
+
     renderCreatives() {
         const {from, to} = this.getDateRange();
         const q = (document.getElementById('creativeSearch').value || '').toLowerCase();
@@ -508,6 +550,7 @@ class Dashboard {
     _rerender(key) {
         if (key === 'summary') this.renderSummary(this.getRows());
         else if (key === 'campaign') this.renderCampaigns();
+        else if (key === 'adset') this.renderAdsets();
         else if (key === 'creative') this.renderCreatives();
     }
 

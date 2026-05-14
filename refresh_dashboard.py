@@ -51,10 +51,14 @@ def fetch_and_save_meta_data():
     creative_fields = ["date", "campaign", "ad_name", "spend", "clicks", "link_clicks",
                        "actions_lead", "actions_complete_registration"]
 
+    adset_fields = ["date", "campaign", "adset", "spend", "clicks", "link_clicks",
+                    "impressions", "actions_lead", "actions_complete_registration"]
+
     for fields, filename in [
         (daily_fields, "meta_daily.json"),
         (country_fields, "meta_country.json"),
         (creative_fields, "meta_creative.json"),
+        (adset_fields, "meta_adset.json"),
     ]:
         records = _windsor_fetch(fields, date_from, date_to)
         path = os.path.join(DATA_DIR, filename)
@@ -139,6 +143,25 @@ def load_meta_creative():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
+    return _exclude_today(df)
+
+
+def load_meta_adset():
+    path = os.path.join(DATA_DIR, "meta_adset.json")
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=["date", "campaign", "adset", "spend", "clicks",
+                                     "link_clicks", "impressions", "meta_conversions"])
+    with open(path) as f:
+        data = json.load(f)
+    rows = data["result"]
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"])
+    for col in ["spend", "clicks", "link_clicks", "impressions", "actions_lead", "actions_complete_registration"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["meta_conversions"] = df.get("actions_complete_registration", 0) + df.get("actions_lead", 0)
     return _exclude_today(df)
 
 
@@ -365,6 +388,20 @@ def load_ab_test_data():
     return ab_daily, ab_totals
 
 
+def build_adset_daily(adset_df):
+    if adset_df.empty:
+        return pd.DataFrame(columns=["date", "campaign", "adset", "spend", "clicks", "impressions", "meta_leads"])
+    df = adset_df.copy()
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+    agg = df.groupby(["date_str", "adset", "campaign"]).agg(
+        spend=("spend", "sum"),
+        clicks=("clicks", "sum"),
+        impressions=("impressions", "sum"),
+        meta_leads=("meta_conversions", "sum"),
+    ).reset_index().rename(columns={"date_str": "date"})
+    return agg.sort_values(["date", "adset"])
+
+
 def build_sf_reg_daily(sf_df):
     result = sf_df[["date", "campaign", "ad_content", "status"]].copy()
     result["date"] = result["date"].dt.strftime("%Y-%m-%d")
@@ -427,6 +464,7 @@ def main():
     meta_daily = load_meta_daily()
     meta_country = load_meta_country()
     meta_creative = load_meta_creative()
+    meta_adset = load_meta_adset()
     sf = load_sf_registrations()
     ab_daily, ab_totals = load_ab_test_data()
 
@@ -448,6 +486,7 @@ def main():
     campaign_daily = build_campaign_daily(meta_daily)
     country_daily = build_country_daily(meta_country)
     creative_daily = build_creative_daily(meta_creative)
+    adset_daily = build_adset_daily(meta_adset)
     sf_reg_daily = build_sf_reg_daily(sf)
 
     print("Generating dashboard...")
@@ -466,6 +505,7 @@ def main():
         "campaign_daily": df_to_json_records(campaign_daily),
         "country_daily": df_to_json_records(country_daily),
         "creative_daily": df_to_json_records(creative_daily),
+        "adset_daily": df_to_json_records(adset_daily),
         "sf_reg_daily": sf_reg_daily,
         "ab_daily": ab_daily,
         "ab_totals": ab_totals,
