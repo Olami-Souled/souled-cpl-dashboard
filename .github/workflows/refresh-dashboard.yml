@@ -26,8 +26,8 @@ jobs:
         env:
           WINDSOR_API_KEY: ${{ secrets.WINDSOR_API_KEY }}
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
-          SF_SECURITY_TOKEN: ${{ secrets.SF_SECURITY_TOKEN }}
+          SF_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
         run: |
           python refresh_dashboard.py --fetch 2>&1 | tee /tmp/refresh_output.txt
           exit ${PIPESTATUS[0]}

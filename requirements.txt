@@ -4,3 +4,5 @@ flask>=3.0
 gunicorn>=21.0
 simple-salesforce>=1.12
 requests>=2.31
+PyJWT>=2.0
+cryptography>=3.0

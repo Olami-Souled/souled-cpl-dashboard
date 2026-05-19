@@ -67,15 +67,30 @@ def fetch_and_save_meta_data():
         print(f"  Saved {len(records)} rows → {filename}")
 
 
+def _sf_jwt_connect():
+    import time, jwt, requests as req
+    payload = {
+        "iss": os.environ["SF_CONSUMER_KEY"],
+        "sub": os.environ["SF_USERNAME"],
+        "aud": "https://login.salesforce.com",
+        "exp": int(time.time()) + 180,
+    }
+    assertion = jwt.encode(payload, os.environ["SF_PRIVATE_KEY"], algorithm="RS256")
+    resp = req.post(
+        "https://login.salesforce.com/services/oauth2/token",
+        data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion},
+    )
+    resp.raise_for_status()
+    d = resp.json()
+    return d["access_token"], d["instance_url"]
+
+
 def fetch_and_save_sf_data():
     """Fetch Salesforce registrations via simple-salesforce and save to data/."""
     from simple_salesforce import Salesforce
     print("Fetching Salesforce registrations...")
-    sf = Salesforce(
-        username=os.environ["SF_USERNAME"],
-        password=os.environ["SF_PASSWORD"],
-        security_token=os.environ["SF_SECURITY_TOKEN"],
-    )
+    access_token, instance_url = _sf_jwt_connect()
+    sf = Salesforce(session_id=access_token, instance_url=instance_url)
     soql = (
         "SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, "
         "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c "
