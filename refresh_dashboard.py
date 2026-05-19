@@ -80,7 +80,8 @@ def _sf_jwt_connect():
         "https://login.salesforce.com/services/oauth2/token",
         data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion},
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        raise RuntimeError(f"SF JWT auth failed ({resp.status_code}): {resp.text}")
     d = resp.json()
     return d["access_token"], d["instance_url"]
 
