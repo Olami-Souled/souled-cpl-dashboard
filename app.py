@@ -8,6 +8,10 @@ from flask import Flask, send_file
 app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+@app.route("/health")
+def health():
+    return {"ok": True}
+
 @app.route("/")
 def index():
     return send_file(os.path.join(BASE_DIR, "dashboard.html"))
