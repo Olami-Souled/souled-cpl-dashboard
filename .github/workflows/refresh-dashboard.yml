@@ -2,8 +2,8 @@ name: Refresh Dashboard
 
 on:
   schedule:
-    # 5 AM UTC = 8 AM Israel time, Mon–Fri
-    - cron: '0 5 * * 1-5'
+    # 5 AM UTC = 8 AM Israel time, daily
+    - cron: '0 5 * * *'
   workflow_dispatch: # allow manual trigger from GitHub UI
 
 jobs:
