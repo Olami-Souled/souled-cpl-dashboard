@@ -166,7 +166,7 @@
     <!-- ALL CHARTS FIRST -->
     <section class="chart-row">
         <div class="chart-container"><h3>Spend & True CPL</h3><canvas id="chartSpendCPL"></canvas></div>
-        <div class="chart-container"><h3>Meta vs Salesforce Leads</h3><canvas id="chartLeadGap"></canvas></div>
+        <div class="chart-container"><h3>Leads by Source</h3><canvas id="chartLeadGap"></canvas></div>
     </section>
     <section class="chart-row">
         <div class="chart-container"><h3>Conversion Rate (Clicks → SF Leads)</h3><canvas id="chartConvRate" style="max-height:220px;"></canvas></div>
@@ -331,6 +331,8 @@ class Dashboard {
         const cpls = rows.map(r => r.true_cpl);
         const sfL = rows.map(r => r.sf_leads);
         const mL = rows.map(r => r.meta_leads);
+        const souledL = rows.map(r => r.meta_leads_souled || 0);
+        const globalL = rows.map(r => r.meta_leads_global || 0);
         const conv = rows.map(r => r.conv_rate);
 
         // Spend + CPL
@@ -350,12 +352,13 @@ class Dashboard {
             }
         });
 
-        // Lead gap
+        // Lead gap — three bars: Souled campaign leads, Global Pixel leads, SF confirmed
         if (this.charts.leadGap) this.charts.leadGap.destroy();
         this.charts.leadGap = new Chart(document.getElementById('chartLeadGap'), {
             type:'bar',
             data: { labels, datasets: [
-                { label:'Meta Leads', data:mL, backgroundColor:'rgba(255,159,28,0.7)', borderRadius:3 },
+                { label:'Souled Leads (Lead)', data:souledL, backgroundColor:'rgba(255,159,28,0.7)', borderRadius:3 },
+                { label:'Global Pixel Leads (CompleteReg)', data:globalL, backgroundColor:'rgba(255,99,99,0.7)', borderRadius:3 },
                 { label:'SF Leads', data:sfL, backgroundColor:'rgba(46,196,182,0.7)', borderRadius:3 }
             ]},
             options: {

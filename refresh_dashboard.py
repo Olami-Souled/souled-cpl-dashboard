@@ -227,6 +227,8 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
         link_clicks=("link_clicks", "sum"),
         impressions=("impressions", "sum"),
         meta_leads=("meta_conversions", "sum"),
+        meta_leads_souled=("actions_lead", "sum"),
+        meta_leads_global=("actions_complete_registration", "sum"),
     ).reset_index()
 
     sf_agg = sf_df.groupby("period").agg(
