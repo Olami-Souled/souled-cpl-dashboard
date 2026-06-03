@@ -96,7 +96,12 @@ def fetch_and_save_sf_data():
         "SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, "
         "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c "
         "FROM Registration__c "
-        "WHERE Referral_Type__c = 'Paid' "
+        # Program__c = Souled is THE discriminator for Souled program signups vs
+        # class/event registrations (which share the Registration__c object but
+        # have Program__c = null). Confirmed populated on current records.
+        # Referral_Type__c / utm_source__c are attribution dimensions, NOT the
+        # Souled-vs-class discriminator — filtering on them undercounts signups.
+        "WHERE Program__c = 'a2F5f000000yRpfEAE' "
         "AND Student__r.Test_Old__c = false "
         "AND (NOT Student__r.Name LIKE '%test%') "
         "AND CreatedDate >= 2025-10-01T00:00:00Z "
