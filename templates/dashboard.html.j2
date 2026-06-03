@@ -148,8 +148,8 @@
             <button class="preset-btn" data-preset="all" onclick="dashboard.setPreset('all',this)">All</button>
         </div>
         <div class="view-toggle">
-            <button class="view-btn" onclick="dashboard.setView('D', this)">Daily</button>
-            <button class="view-btn active" onclick="dashboard.setView('W', this)">Weekly</button>
+            <button class="view-btn active" onclick="dashboard.setView('D', this)">Daily</button>
+            <button class="view-btn" onclick="dashboard.setView('W', this)">Weekly</button>
             <button class="view-btn" onclick="dashboard.setView('M', this)">Monthly</button>
         </div>
     </div>
@@ -244,7 +244,7 @@ function cplClass(v) { return v <= 60 ? 'cpl-good' : v <= 100 ? 'cpl-mid' : 'cpl
 class Dashboard {
     constructor(data) {
         this.raw = data;
-        this.view = 'W';
+        this.view = 'D';
         this.sortCol = 'period'; this.sortDir = 'desc';
         this.charts = {};
         this.expanded = { summary: false, campaign: false, adset: false, creative: false };
@@ -255,7 +255,7 @@ class Dashboard {
         document.getElementById('lastUpdated').textContent = this.raw.generated_at;
         document.getElementById('dateFrom').value = this.raw.date_min;
         document.getElementById('dateTo').value = this.raw.date_max;
-        this.setPreset('6m');
+        this.setPreset('1m');
     }
 
     setPreset(p, btn) {
