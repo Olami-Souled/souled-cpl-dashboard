@@ -9,10 +9,17 @@ Run with --fetch to pull live data from Windsor.ai REST API + Salesforce
 import argparse
 import json
 import os
+import time
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
+
+# Windsor.ai connectors.windsor.ai can be slow to respond for the heaviest
+# breakdowns (adset/creative produce thousands of rows). Give each call a
+# generous read timeout and retry transient timeouts/5xx with backoff.
+WINDSOR_TIMEOUT = 300
+WINDSOR_RETRIES = 4
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -30,11 +37,31 @@ def _windsor_fetch(fields, date_from, date_to):
         "fields": ",".join(fields),
         "account_id": "548376353109705",
     }
-    resp = requests.get("https://connectors.windsor.ai/facebook", params=params, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    # Windsor REST API returns {"data": [...]} or {"result": [...]}
-    return data.get("data") or data.get("result") or []
+    last_err = None
+    for attempt in range(1, WINDSOR_RETRIES + 1):
+        try:
+            resp = requests.get(
+                "https://connectors.windsor.ai/facebook",
+                params=params,
+                timeout=(30, WINDSOR_TIMEOUT),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # Windsor REST API returns {"data": [...]} or {"result": [...]}
+            return data.get("data") or data.get("result") or []
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.HTTPError) as e:
+            # Only retry transient server-side conditions; re-raise 4xx immediately.
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status is not None and 400 <= status < 500:
+                raise
+            last_err = e
+            if attempt < WINDSOR_RETRIES:
+                backoff = 5 * (2 ** (attempt - 1))  # 5s, 10s, 20s
+                print(f"  Windsor fetch attempt {attempt} failed ({e}); retrying in {backoff}s...")
+                time.sleep(backoff)
+    raise last_err
 
 
 def fetch_and_save_meta_data():
