@@ -2,8 +2,10 @@ name: Refresh Dashboard
 
 on:
   schedule:
-    # 5 AM UTC = 8 AM Israel time, daily
-    - cron: '0 5 * * *'
+    # 4 AM UTC = 7 AM Israel time during IDT (UTC+3, summer), daily.
+    # GitHub Actions cron is UTC-only and does not follow DST — when Israel
+    # falls back to IST (UTC+2, ~late Oct–late Mar) this fires at 6 AM Israel.
+    - cron: '0 4 * * *'
   workflow_dispatch: # allow manual trigger from GitHub UI
 
 jobs:
