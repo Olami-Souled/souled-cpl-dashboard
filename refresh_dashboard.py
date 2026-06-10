@@ -117,8 +117,49 @@ def fetch_and_save_sf_data():
     """Fetch Salesforce registrations via simple-salesforce and save to data/."""
     from simple_salesforce import Salesforce
     print("Fetching Salesforce registrations...")
+    # GHA runners occasionally hit transient TCP connect timeouts reaching the
+    # SF instance host. Retry the auth+query with backoff so a single blip
+    # doesn't fail the whole refresh.
+    last_err = None
+    result = None
+    for attempt in range(1, WINDSOR_RETRIES + 1):
+        try:
+            result = _sf_query_registrations(Salesforce)
+            break
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError) as e:
+            last_err = e
+            if attempt < WINDSOR_RETRIES:
+                backoff = 5 * (2 ** (attempt - 1))
+                print(f"  SF fetch attempt {attempt} failed ({e}); retrying in {backoff}s...")
+                time.sleep(backoff)
+    if result is None:
+        raise last_err
+    records = result["records"]
+    # Remove Salesforce metadata field
+    for r in records:
+        r.pop("attributes", None)
+    path = os.path.join(DATA_DIR, "sf_registrations.json")
+    with open(path, "w") as f:
+        json.dump({"result": {"records": records, "totalSize": len(records)}}, f)
+    print(f"  Saved {len(records)} registrations → sf_registrations.json")
+
+
+def _sf_query_registrations(Salesforce):
+    """Establish a fresh SF JWT session and run the registrations query."""
+    import requests as req
     access_token, instance_url = _sf_jwt_connect()
-    sf = Salesforce(session_id=access_token, instance_url=instance_url)
+    # Give the session an explicit connect/read timeout — simple_salesforce
+    # otherwise leaves it as None (waits forever / relies on OS defaults).
+    session = req.Session()
+    _orig_request = session.request
+
+    def _request_with_timeout(method, url, **kwargs):
+        kwargs.setdefault("timeout", (30, 180))
+        return _orig_request(method, url, **kwargs)
+
+    session.request = _request_with_timeout
+    sf = Salesforce(session_id=access_token, instance_url=instance_url, session=session)
     soql = (
         "SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, "
         "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c "
@@ -134,15 +175,7 @@ def fetch_and_save_sf_data():
         "AND CreatedDate >= 2025-10-01T00:00:00Z "
         "ORDER BY CreatedDate DESC"
     )
-    result = sf.query_all(soql)
-    records = result["records"]
-    # Remove Salesforce metadata field
-    for r in records:
-        r.pop("attributes", None)
-    path = os.path.join(DATA_DIR, "sf_registrations.json")
-    with open(path, "w") as f:
-        json.dump({"result": {"records": records, "totalSize": len(records)}}, f)
-    print(f"  Saved {len(records)} registrations → sf_registrations.json")
+    return sf.query_all(soql)
 
 
 def _exclude_today(df):
