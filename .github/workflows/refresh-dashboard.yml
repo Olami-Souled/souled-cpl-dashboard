@@ -8,6 +8,13 @@ on:
     - cron: '0 4 * * *'
   workflow_dispatch: # allow manual trigger from GitHub UI
 
+# Serialize runs: a manual "Run Now" while another run is going (or two
+# clicks in quick succession) would otherwise both fetch + commit and race
+# on the push to master. Queue them instead of running concurrently.
+concurrency:
+  group: refresh-dashboard
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -39,8 +46,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "Daily data refresh [auto]"
-          git push
+          git diff --staged --quiet && { echo "No changes to commit."; exit 0; }
+          git commit -m "Daily data refresh [auto]"
+          # Rebase-and-retry: if master advanced between checkout and push
+          # (e.g. a concurrent run landed first), rebase our data commit on top
+          # and push again instead of failing on a non-fast-forward.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing on latest master..."
+            git pull --rebase origin master
+          done
+          echo "Push still failing after retries." >&2
+          exit 1
 
       - name: Heartbeat
         if: always()
