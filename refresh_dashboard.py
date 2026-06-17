@@ -162,7 +162,8 @@ def _sf_query_registrations(Salesforce):
     sf = Salesforce(session_id=access_token, instance_url=instance_url, session=session)
     soql = (
         "SELECT Id, CreatedDate, Status__c, utm_source__c, utm_campaign__c, "
-        "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c "
+        "utm_content__c, utm_medium__c, Disqualified__c, Disqualified_Reason__c, "
+        "Referral_Type__c, Student__r.fbc__c "
         "FROM Registration__c "
         # Program__c = Souled is THE discriminator for Souled program signups vs
         # class/event registrations (which share the Registration__c object but
@@ -264,6 +265,20 @@ def load_sf_registrations():
     df["ad_content"] = df["utm_content__c"].fillna("Unknown")
     df["status"] = df["Status__c"]
     df["disqualified"] = df["Disqualified__c"].fillna(False) if "Disqualified__c" in df.columns else False
+    # Paid-lead flag (dashboard purpose = paid-advertising performance). A registration
+    # counts as paid if it carries an actual Meta signal:
+    #   - fbc present (Facebook click ID on the contact = arrived via a Meta ad click), OR
+    #   - Referral_Type = 'Paid' (team's manual paid tag; catches cross-device leads that
+    #     lost the click ID), OR
+    #   - Referral_Type = 'Social' (Instagram/bio-link; verified ~97% fbc-positive, i.e.
+    #     ad-driven — see 2026-06-17 analysis).
+    # Excludes 'Unknown' (UTM-stripped, no Meta signal) and Friend/Org/Call Center.
+    def _has_fbc(v):
+        return bool(isinstance(v, dict) and v.get("fbc__c"))
+    has_fbc = df["Student__r"].apply(_has_fbc) if "Student__r" in df.columns else False
+    is_paid_ref = (df["Referral_Type__c"].isin(["Paid", "Social"])
+                   if "Referral_Type__c" in df.columns else False)
+    df["is_paid"] = has_fbc | is_paid_ref
     return _exclude_today(df)
 
 
@@ -300,15 +315,19 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
     ).reset_index()
 
     sf_agg = sf_df.groupby("period").agg(
-        sf_leads=("Id", "count"),
+        sf_leads=("is_paid", "sum"),        # paid leads only = CPL denominator (dashboard purpose)
+        sf_leads_all=("Id", "count"),       # all Souled regs (context column)
         sf_disqualified=("disqualified", "sum"),
     ).reset_index()
 
     merged = meta_agg.merge(sf_agg, on="period", how="outer").fillna(0)
     merged = merged.sort_values(sort_key)
+    # Non-paid (UTM-stripped Unknown + Friend/Org/Call Center) shown separately, not in CPL.
+    merged["sf_leads_unattributed"] = merged["sf_leads_all"] - merged["sf_leads"]
 
     merged["cpc"] = (merged["spend"] / merged["clicks"].replace(0, float("nan"))).round(2)
     merged["ctr"] = ((merged["clicks"] / merged["impressions"].replace(0, float("nan"))) * 100).round(2)
+    # True CPL = spend / PAID leads (not all registrations) — reflects paid-ad performance.
     merged["true_cpl"] = (merged["spend"] / merged["sf_leads"].replace(0, float("nan"))).round(2)
     # Reconcile against the Souled-pixel Lead (Meta's deduped primary event), NOT the
     # sum of both pixels — summing would double-count during the dual-pixel test.
@@ -333,7 +352,7 @@ def build_campaign_table(meta_df, sf_df):
     ).reset_index()
 
     sf_camp = sf_df.groupby("campaign").agg(
-        sf_leads=("Id", "count"),
+        sf_leads=("is_paid", "sum"),
     ).reset_index()
 
     merged = meta_camp.merge(sf_camp, on="campaign", how="outer").fillna(0)
@@ -355,7 +374,7 @@ def build_creative_table(creative_df, sf_df):
     ).reset_index()
 
     sf_content = sf_df.groupby("ad_content").agg(
-        sf_leads=("Id", "count"),
+        sf_leads=("is_paid", "sum"),
     ).reset_index().rename(columns={"ad_content": "ad_name"})
 
     merged = creative_agg.merge(sf_content, on="ad_name", how="left").fillna(0)
@@ -429,8 +448,9 @@ def build_adset_daily(adset_df):
 
 
 def build_sf_reg_daily(sf_df):
-    result = sf_df[["date", "campaign", "ad_content", "status"]].copy()
+    result = sf_df[["date", "campaign", "ad_content", "status", "is_paid"]].copy()
     result["date"] = result["date"].dt.strftime("%Y-%m-%d")
+    result["is_paid"] = result["is_paid"].astype(bool)
     return result.to_dict("records")
 
 
@@ -458,7 +478,8 @@ def compute_kpis(meta_df, sf_df):
     # Keep the two pixel events separate — never sum (dual-pixel double-count).
     total_meta_leads_souled = meta_df["actions_lead"].sum()
     total_meta_leads_global = meta_df["actions_complete_registration"].sum()
-    total_sf_leads = len(sf_df)
+    total_sf_leads = int(sf_df["is_paid"].sum())   # paid leads = CPL denominator
+    total_sf_leads_all = len(sf_df)                 # all Souled regs (context)
     true_cpl = round(total_spend / total_sf_leads, 2) if total_sf_leads > 0 else 0
     # Cost per Souled-pixel Lead (Meta's deduped primary event), for reference only.
     meta_cpl = round(total_spend / total_meta_leads_souled, 2) if total_meta_leads_souled > 0 else 0
@@ -475,6 +496,7 @@ def compute_kpis(meta_df, sf_df):
         "total_meta_leads_souled": int(total_meta_leads_souled),
         "total_meta_leads_global": int(total_meta_leads_global),
         "total_sf_leads": total_sf_leads,
+        "total_sf_leads_all": total_sf_leads_all,
         "true_cpl": true_cpl,
         "meta_cpl": meta_cpl,
         "lead_gap_pct": lead_gap_pct,
