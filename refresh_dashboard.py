@@ -291,7 +291,10 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
         clicks=("clicks", "sum"),
         link_clicks=("link_clicks", "sum"),
         impressions=("impressions", "sum"),
-        meta_leads=("meta_conversions", "sum"),
+        # Keep the two pixel events SEPARATE — do not sum them. During the dual-pixel
+        # test every registration fires both a Souled-pixel Lead and a Global-pixel
+        # CompleteRegistration, and Meta cannot cross-dedup across pixels, so summing
+        # double-counts (~10/wk). See wiki connections/meta-capi-tracking.md.
         meta_leads_souled=("actions_lead", "sum"),
         meta_leads_global=("actions_complete_registration", "sum"),
     ).reset_index()
@@ -307,9 +310,10 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
     merged["cpc"] = (merged["spend"] / merged["clicks"].replace(0, float("nan"))).round(2)
     merged["ctr"] = ((merged["clicks"] / merged["impressions"].replace(0, float("nan"))) * 100).round(2)
     merged["true_cpl"] = (merged["spend"] / merged["sf_leads"].replace(0, float("nan"))).round(2)
-    merged["meta_cpl"] = (merged["spend"] / merged["meta_leads"].replace(0, float("nan"))).round(2)
-    merged["lead_gap"] = merged["meta_leads"] - merged["sf_leads"]
-    merged["lead_gap_pct"] = ((merged["lead_gap"] / merged["meta_leads"].replace(0, float("nan"))) * 100).round(1)
+    # Reconcile against the Souled-pixel Lead (Meta's deduped primary event), NOT the
+    # sum of both pixels — summing would double-count during the dual-pixel test.
+    merged["lead_gap"] = merged["meta_leads_souled"] - merged["sf_leads"]
+    merged["lead_gap_pct"] = ((merged["lead_gap"] / merged["meta_leads_souled"].replace(0, float("nan"))) * 100).round(1)
     merged["conv_rate"] = ((merged["sf_leads"] / merged["clicks"].replace(0, float("nan"))) * 100).round(2)
 
     merged = merged.fillna(0)
@@ -451,11 +455,14 @@ def compute_kpis(meta_df, sf_df):
     total_spend = meta_df["spend"].sum()
     total_clicks = meta_df["clicks"].sum()
     total_impressions = meta_df["impressions"].sum()
-    total_meta_leads = meta_df["meta_conversions"].sum()
+    # Keep the two pixel events separate — never sum (dual-pixel double-count).
+    total_meta_leads_souled = meta_df["actions_lead"].sum()
+    total_meta_leads_global = meta_df["actions_complete_registration"].sum()
     total_sf_leads = len(sf_df)
     true_cpl = round(total_spend / total_sf_leads, 2) if total_sf_leads > 0 else 0
-    meta_cpl = round(total_spend / total_meta_leads, 2) if total_meta_leads > 0 else 0
-    lead_gap_pct = round((total_meta_leads - total_sf_leads) / total_meta_leads * 100, 1) if total_meta_leads > 0 else 0
+    # Cost per Souled-pixel Lead (Meta's deduped primary event), for reference only.
+    meta_cpl = round(total_spend / total_meta_leads_souled, 2) if total_meta_leads_souled > 0 else 0
+    lead_gap_pct = round((total_meta_leads_souled - total_sf_leads) / total_meta_leads_souled * 100, 1) if total_meta_leads_souled > 0 else 0
     cpc = round(total_spend / total_clicks, 2) if total_clicks > 0 else 0
     ctr = round(total_clicks / total_impressions * 100, 2) if total_impressions > 0 else 0
 
@@ -465,7 +472,8 @@ def compute_kpis(meta_df, sf_df):
         "total_spend": round(total_spend, 2),
         "total_clicks": int(total_clicks),
         "total_impressions": int(total_impressions),
-        "total_meta_leads": int(total_meta_leads),
+        "total_meta_leads_souled": int(total_meta_leads_souled),
+        "total_meta_leads_global": int(total_meta_leads_global),
         "total_sf_leads": total_sf_leads,
         "true_cpl": true_cpl,
         "meta_cpl": meta_cpl,

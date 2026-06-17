@@ -157,9 +157,9 @@
     <section class="kpi-row">
         <div class="kpi-card"><div class="kpi-label">Total Spend</div><div class="kpi-value" id="kpi-spend" style="color:var(--color-1)"></div><div class="kpi-sub" id="kpi-clicks-sub"></div></div>
         <div class="kpi-card"><div class="kpi-label">SF Leads</div><div class="kpi-value" id="kpi-sf-leads" style="color:var(--positive)"></div><div class="kpi-sub">Salesforce Registrations</div></div>
-        <div class="kpi-card"><div class="kpi-label">Meta Leads</div><div class="kpi-value" id="kpi-meta-leads" style="color:var(--neutral)"></div><div class="kpi-sub">Meta-Reported</div></div>
+        <div class="kpi-card"><div class="kpi-label">Meta Lead (Souled px)</div><div class="kpi-value" id="kpi-meta-leads" style="color:var(--neutral)"></div><div class="kpi-sub" id="kpi-meta-leads-sub"></div></div>
         <div class="kpi-card"><div class="kpi-label">True CPL</div><div class="kpi-value" id="kpi-cpl"></div><div class="kpi-sub">Spend / SF Leads</div></div>
-        <div class="kpi-card"><div class="kpi-label">Lead Gap</div><div class="kpi-value" id="kpi-gap" style="color:var(--color-4)"></div><div class="kpi-sub">Meta vs SF Difference</div></div>
+        <div class="kpi-card"><div class="kpi-label">Lead Gap</div><div class="kpi-value" id="kpi-gap" style="color:var(--color-4)"></div><div class="kpi-sub">Souled Lead vs SF</div></div>
         <div class="kpi-card"><div class="kpi-label">Coach Match Rate</div><div class="kpi-value" id="kpi-coach" style="color:var(--positive)"></div><div class="kpi-sub">Ever Matched to Coach</div></div>
     </section>
 
@@ -172,22 +172,24 @@
         <div class="chart-container"><h3>Conversion Rate (Clicks → SF Leads)</h3><canvas id="chartConvRate" style="max-height:220px;"></canvas></div>
         <div class="chart-container">
             <h3>Lead Reconciliation (Meta vs Salesforce)</h3>
-            <p class="section-note">Gap = Meta-reported minus SF-confirmed. Positive (orange) = Meta over-reports; negative (teal) = test records in SF or Meta attribution lag on recent days.</p>
+            <p class="section-note">Gap = Souled-pixel Lead (Meta's deduped primary event) minus SF-confirmed registrations. The Global-pixel CompleteRegistration is the dual-pixel test arm and is shown separately, never added to the Lead count (the two pixels fire on the same registration and Meta cannot cross-deduplicate them). Positive (orange) = Meta over-reports; negative (teal) = Meta attribution lag on recent days.</p>
             <canvas id="chartReconciliation" style="max-height:250px;"></canvas>
         </div>
     </section>
     <!-- ALL TABLES BELOW -->
     <section class="section">
         <h3>Period Summary</h3>
+        <p class="section-note">Meta conversions are split by pixel and never summed: <strong>Lead</strong> = Souled pixel (the primary event current campaigns optimize for); <strong>CompReg</strong> = Global pixel (the dual-pixel test arm). Each registration fires both, on two pixels Meta cannot cross-deduplicate, so adding them double-counts. SF Leads is the deduped source of truth.</p>
         <div class="table-responsive"><table class="data-table" id="summaryTable"><thead><tr>
             <th onclick="dashboard.sortSummary('period')">Period</th>
             <th onclick="dashboard.sortSummary('spend')" class="text-right">Spend</th>
             <th onclick="dashboard.sortSummary('clicks')" class="text-right">Clicks</th>
             <th onclick="dashboard.sortSummary('cpc')" class="text-right">CPC</th>
             <th onclick="dashboard.sortSummary('ctr')" class="text-right">CTR</th>
-            <th onclick="dashboard.sortSummary('meta_leads')" class="text-right">Meta Leads</th>
+            <th onclick="dashboard.sortSummary('meta_leads_souled')" class="text-right">Lead<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Souled px</span></th>
+            <th onclick="dashboard.sortSummary('meta_leads_global')" class="text-right">CompReg<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Global px (test)</span></th>
             <th onclick="dashboard.sortSummary('sf_leads')" class="text-right">SF Leads</th>
-            <th onclick="dashboard.sortSummary('lead_gap')" class="text-right">Gap</th>
+            <th onclick="dashboard.sortSummary('lead_gap')" class="text-right">Gap<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Lead−SF</span></th>
             <th onclick="dashboard.sortSummary('true_cpl')" class="text-right">True CPL</th>
             <th onclick="dashboard.sortSummary('conv_rate')" class="text-right">Conv %</th>
         </tr></thead><tbody id="summaryBody"></tbody><tfoot id="summaryFoot"></tfoot></table></div>
@@ -311,16 +313,18 @@ class Dashboard {
     renderKPIs(rows, funnel) {
         const s = rows.reduce((a,r) => a+r.spend, 0);
         const c = rows.reduce((a,r) => a+r.clicks, 0);
-        const ml = rows.reduce((a,r) => a+r.meta_leads, 0);
+        const souled = rows.reduce((a,r) => a+(r.meta_leads_souled||0), 0);
+        const glob = rows.reduce((a,r) => a+(r.meta_leads_global||0), 0);
         const sl = rows.reduce((a,r) => a+r.sf_leads, 0);
         const cpl = sl > 0 ? s/sl : 0;
-        const gap = ml > 0 ? ((ml-sl)/ml*100) : 0;
+        const gap = souled > 0 ? ((souled-sl)/souled*100) : 0;
         document.getElementById('kpi-spend').textContent = fmt$(s);
         document.getElementById('kpi-clicks-sub').textContent = fmtN(c) + ' clicks';
         document.getElementById('kpi-sf-leads').textContent = fmtN(sl);
         const cplEl = document.getElementById('kpi-cpl');
         cplEl.textContent = fmt$(cpl); cplEl.className = 'kpi-value ' + cplClass(cpl);
-        document.getElementById('kpi-meta-leads').textContent = fmtN(ml);
+        document.getElementById('kpi-meta-leads').textContent = fmtN(souled);
+        document.getElementById('kpi-meta-leads-sub').textContent = '+ ' + fmtN(glob) + ' Global CompReg (test)';
         document.getElementById('kpi-gap').textContent = fmtPct(gap);
         document.getElementById('kpi-coach').textContent = funnel.coach_match_rate + '%';
     }
@@ -330,7 +334,6 @@ class Dashboard {
         const spends = rows.map(r => r.spend);
         const cpls = rows.map(r => r.true_cpl);
         const sfL = rows.map(r => r.sf_leads);
-        const mL = rows.map(r => r.meta_leads);
         const souledL = rows.map(r => r.meta_leads_souled || 0);
         const globalL = rows.map(r => r.meta_leads_global || 0);
         const conv = rows.map(r => r.conv_rate);
@@ -393,18 +396,21 @@ class Dashboard {
         tbody.innerHTML = show.map(r => `<tr>
             <td>${r.period}</td><td class="text-right">${fmt$(r.spend)}</td><td class="text-right">${fmtN(r.clicks)}</td>
             <td class="text-right">${fmt$(r.cpc)}</td><td class="text-right">${fmtPct(r.ctr)}</td>
-            <td class="text-right">${fmtN(r.meta_leads)}</td><td class="text-right">${fmtN(r.sf_leads)}</td>
+            <td class="text-right">${fmtN(r.meta_leads_souled)}</td><td class="text-right">${fmtN(r.meta_leads_global)}</td>
+            <td class="text-right">${fmtN(r.sf_leads)}</td>
             <td class="text-right">${fmtN(r.lead_gap)}</td>
             <td class="text-right ${cplClass(r.true_cpl)}">${fmt$(r.true_cpl)}</td>
             <td class="text-right">${fmtPct(r.conv_rate)}</td></tr>`).join('');
 
         const ts=rows.reduce((a,r)=>a+r.spend,0), tc=rows.reduce((a,r)=>a+r.clicks,0), ti=rows.reduce((a,r)=>a+r.impressions,0);
-        const tml=rows.reduce((a,r)=>a+r.meta_leads,0), tsl=rows.reduce((a,r)=>a+r.sf_leads,0);
-        const tg=tml-tsl, tcpc=tc?ts/tc:0, tctr=ti?tc/ti*100:0, tcpl=tsl?ts/tsl:0, tconv=tc?tsl/tc*100:0;
+        const tsouled=rows.reduce((a,r)=>a+(r.meta_leads_souled||0),0), tglobal=rows.reduce((a,r)=>a+(r.meta_leads_global||0),0);
+        const tsl=rows.reduce((a,r)=>a+r.sf_leads,0);
+        const tg=tsouled-tsl, tcpc=tc?ts/tc:0, tctr=ti?tc/ti*100:0, tcpl=tsl?ts/tsl:0, tconv=tc?tsl/tc*100:0;
         document.getElementById('summaryFoot').innerHTML = `<tr>
             <td>TOTAL</td><td class="text-right">${fmt$(ts)}</td><td class="text-right">${fmtN(tc)}</td>
             <td class="text-right">${fmt$(tcpc)}</td><td class="text-right">${fmtPct(tctr)}</td>
-            <td class="text-right">${fmtN(tml)}</td><td class="text-right">${fmtN(tsl)}</td>
+            <td class="text-right">${fmtN(tsouled)}</td><td class="text-right">${fmtN(tglobal)}</td>
+            <td class="text-right">${fmtN(tsl)}</td>
             <td class="text-right">${fmtN(tg)}</td>
             <td class="text-right ${cplClass(tcpl)}">${fmt$(tcpl)}</td>
             <td class="text-right">${fmtPct(tconv)}</td></tr>`;
@@ -535,7 +541,7 @@ class Dashboard {
         if (this.charts.recon) this.charts.recon.destroy();
         this.charts.recon = new Chart(document.getElementById('chartReconciliation'), {
             data: { labels, datasets: [
-                { type:'bar', label:'Lead Gap (Meta - SF)', data:gaps, backgroundColor:gaps.map(g=>g>=0?'rgba(255,159,28,0.7)':'rgba(46,196,182,0.7)'), borderRadius:3, yAxisID:'y', order:2 },
+                { type:'bar', label:'Lead Gap (Souled px Lead − SF)', data:gaps, backgroundColor:gaps.map(g=>g>=0?'rgba(255,159,28,0.7)':'rgba(46,196,182,0.7)'), borderRadius:3, yAxisID:'y', order:2 },
                 { type:'line', label:'Gap %', data:gapPcts, borderColor:'#e71d36', borderWidth:2, pointRadius:3, tension:0.3, yAxisID:'y1', order:1 }
             ]},
             options: {
