@@ -21,6 +21,15 @@ from jinja2 import Environment, FileSystemLoader
 WINDSOR_TIMEOUT = 300
 WINDSOR_RETRIES = 4
 
+# 2026-07-01 pixel migration: Souled campaigns moved off the Souled pixel
+# (Lead event) onto the Olami Global pixel, optimizing on CompleteRegistration.
+# The primary Meta event is Souled-px Lead BEFORE this date and Global-px
+# CompleteRegistration FROM it onward. See wiki connections/meta-capi-tracking.md.
+PIXEL_CUTOVER = "2026-07-01"
+# Suppress Gap % when the primary-event count is below this — a 1-2 event
+# denominator turns a tiny absolute gap into a huge misleading percentage.
+GAP_PCT_MIN_EVENTS = 5
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
@@ -198,6 +207,10 @@ def load_meta_daily():
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     # Combine both conversion events: older campaigns used complete_registration, newer use lead
     df["meta_conversions"] = df["actions_complete_registration"] + df["actions_lead"]
+    # Primary event per row: Souled-px Lead before the pixel migration,
+    # Global-px CompleteRegistration from it onward.
+    cutover = pd.Timestamp(PIXEL_CUTOVER)
+    df["meta_primary"] = df["actions_lead"].where(df["date"] < cutover, df["actions_complete_registration"])
     return _exclude_today(df)
 
 
@@ -307,11 +320,14 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
         link_clicks=("link_clicks", "sum"),
         impressions=("impressions", "sum"),
         # Keep the two pixel events SEPARATE — do not sum them. During the dual-pixel
-        # test every registration fires both a Souled-pixel Lead and a Global-pixel
+        # overlap every registration fired both a Souled-pixel Lead and a Global-pixel
         # CompleteRegistration, and Meta cannot cross-dedup across pixels, so summing
         # double-counts (~10/wk). See wiki connections/meta-capi-tracking.md.
         meta_leads_souled=("actions_lead", "sum"),
         meta_leads_global=("actions_complete_registration", "sum"),
+        # Primary event (Lead pre-cutover, CompleteRegistration after) — the
+        # series KPIs and reconciliation compare against SF.
+        meta_leads_primary=("meta_primary", "sum"),
     ).reset_index()
 
     sf_agg = sf_df.groupby("period").agg(
@@ -329,15 +345,20 @@ def aggregate_by_period(meta_df, sf_df, period="W"):
     merged["ctr"] = ((merged["clicks"] / merged["impressions"].replace(0, float("nan"))) * 100).round(2)
     # True CPL = spend / PAID leads (not all registrations) — reflects paid-ad performance.
     merged["true_cpl"] = (merged["spend"] / merged["sf_leads"].replace(0, float("nan"))).round(2)
-    # Reconcile against the Souled-pixel Lead (Meta's deduped primary event), NOT the
-    # sum of both pixels — summing would double-count during the dual-pixel test.
-    merged["lead_gap"] = merged["meta_leads_souled"] - merged["sf_leads"]
-    merged["lead_gap_pct"] = ((merged["lead_gap"] / merged["meta_leads_souled"].replace(0, float("nan"))) * 100).round(1)
+    # Reconcile against the primary Meta event (Souled-px Lead pre-cutover,
+    # Global-px CompleteRegistration after), NOT the sum of both pixels —
+    # summing would double-count during the dual-pixel overlap.
+    merged["lead_gap"] = merged["meta_leads_primary"] - merged["sf_leads"]
+    merged["lead_gap_pct"] = ((merged["lead_gap"] / merged["meta_leads_primary"].replace(0, float("nan"))) * 100).round(1)
     merged["conv_rate"] = ((merged["sf_leads"] / merged["clicks"].replace(0, float("nan"))) * 100).round(2)
 
     merged = merged.fillna(0)
     for col in merged.select_dtypes(include=["float64"]).columns:
         merged[col] = merged[col].replace([float("inf"), float("-inf")], 0)
+
+    # Null out Gap % where the denominator is too small to be meaningful — the
+    # chart renders null as a break in the line instead of a wild swing.
+    merged.loc[merged["meta_leads_primary"] < GAP_PCT_MIN_EVENTS, "lead_gap_pct"] = float("nan")
 
     return merged
 
@@ -478,12 +499,13 @@ def compute_kpis(meta_df, sf_df):
     # Keep the two pixel events separate — never sum (dual-pixel double-count).
     total_meta_leads_souled = meta_df["actions_lead"].sum()
     total_meta_leads_global = meta_df["actions_complete_registration"].sum()
+    total_meta_leads_primary = meta_df["meta_primary"].sum()
     total_sf_leads = int(sf_df["is_paid"].sum())   # paid leads = CPL denominator
     total_sf_leads_all = len(sf_df)                 # all Souled regs (context)
     true_cpl = round(total_spend / total_sf_leads, 2) if total_sf_leads > 0 else 0
-    # Cost per Souled-pixel Lead (Meta's deduped primary event), for reference only.
-    meta_cpl = round(total_spend / total_meta_leads_souled, 2) if total_meta_leads_souled > 0 else 0
-    lead_gap_pct = round((total_meta_leads_souled - total_sf_leads) / total_meta_leads_souled * 100, 1) if total_meta_leads_souled > 0 else 0
+    # Cost per primary Meta event (Lead pre-cutover, CompReg after), reference only.
+    meta_cpl = round(total_spend / total_meta_leads_primary, 2) if total_meta_leads_primary > 0 else 0
+    lead_gap_pct = round((total_meta_leads_primary - total_sf_leads) / total_meta_leads_primary * 100, 1) if total_meta_leads_primary >= GAP_PCT_MIN_EVENTS else 0
     cpc = round(total_spend / total_clicks, 2) if total_clicks > 0 else 0
     ctr = round(total_clicks / total_impressions * 100, 2) if total_impressions > 0 else 0
 
@@ -495,6 +517,7 @@ def compute_kpis(meta_df, sf_df):
         "total_impressions": int(total_impressions),
         "total_meta_leads_souled": int(total_meta_leads_souled),
         "total_meta_leads_global": int(total_meta_leads_global),
+        "total_meta_leads_primary": int(total_meta_leads_primary),
         "total_sf_leads": total_sf_leads,
         "total_sf_leads_all": total_sf_leads_all,
         "true_cpl": true_cpl,
@@ -545,6 +568,7 @@ def main():
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "date_min": date_min,
         "date_max": date_max,
+        "pixel_cutover": PIXEL_CUTOVER,
         "kpis": kpis,
         "weekly": df_to_json_records(weekly),
         "monthly": df_to_json_records(monthly),
