@@ -157,9 +157,9 @@
     <section class="kpi-row">
         <div class="kpi-card"><div class="kpi-label">Total Spend</div><div class="kpi-value" id="kpi-spend" style="color:var(--color-1)"></div><div class="kpi-sub" id="kpi-clicks-sub"></div></div>
         <div class="kpi-card"><div class="kpi-label">Paid Leads</div><div class="kpi-value" id="kpi-sf-leads" style="color:var(--positive)"></div><div class="kpi-sub" id="kpi-sf-leads-sub"></div></div>
-        <div class="kpi-card"><div class="kpi-label">Meta Lead (Souled px)</div><div class="kpi-value" id="kpi-meta-leads" style="color:var(--neutral)"></div><div class="kpi-sub" id="kpi-meta-leads-sub"></div></div>
+        <div class="kpi-card"><div class="kpi-label">Meta Conversions</div><div class="kpi-value" id="kpi-meta-leads" style="color:var(--neutral)"></div><div class="kpi-sub" id="kpi-meta-leads-sub"></div></div>
         <div class="kpi-card"><div class="kpi-label">True CPL</div><div class="kpi-value" id="kpi-cpl"></div><div class="kpi-sub">Spend / Paid Leads</div></div>
-        <div class="kpi-card"><div class="kpi-label">Lead Gap</div><div class="kpi-value" id="kpi-gap" style="color:var(--color-4)"></div><div class="kpi-sub">Souled Lead vs SF</div></div>
+        <div class="kpi-card"><div class="kpi-label">Lead Gap</div><div class="kpi-value" id="kpi-gap" style="color:var(--color-4)"></div><div class="kpi-sub">Meta primary event vs SF</div></div>
         <div class="kpi-card"><div class="kpi-label">Coach Match Rate</div><div class="kpi-value" id="kpi-coach" style="color:var(--positive)"></div><div class="kpi-sub">Ever Matched to Coach</div></div>
     </section>
 
@@ -172,25 +172,25 @@
         <div class="chart-container"><h3>Conversion Rate (Clicks → SF Leads)</h3><canvas id="chartConvRate" style="max-height:220px;"></canvas></div>
         <div class="chart-container">
             <h3>Lead Reconciliation (Meta vs Salesforce)</h3>
-            <p class="section-note">Gap = Souled-pixel Lead (Meta's deduped primary event) minus SF-confirmed registrations. The Global-pixel CompleteRegistration is the dual-pixel test arm and is shown separately, never added to the Lead count (the two pixels fire on the same registration and Meta cannot cross-deduplicate them). Positive (orange) = Meta over-reports; negative (teal) = Meta attribution lag on recent days.</p>
+            <p class="section-note">Gap = Meta's primary conversion event minus SF-confirmed paid registrations. The primary event follows the Jul 1, 2026 pixel migration: <strong>Souled-pixel Lead</strong> through Jun 30, <strong>Global-pixel CompleteRegistration</strong> from Jul 1 onward (Souled campaigns now run only on the Global pixel and optimize on CompleteRegistration; the Souled pixel is retired). The two events are never summed — during the dual-pixel overlap both fired on the same registration and Meta cannot cross-deduplicate them. Positive (orange) = Meta over-reports; negative (teal) = Meta under-reports or attribution lag on recent days. Gap % is hidden for periods with fewer than 5 primary events (too noisy to be meaningful).</p>
             <canvas id="chartReconciliation" style="max-height:250px;"></canvas>
         </div>
     </section>
     <!-- ALL TABLES BELOW -->
     <section class="section">
         <h3>Period Summary</h3>
-        <p class="section-note">Meta conversions are split by pixel and never summed: <strong>Lead</strong> = Souled pixel (the primary event current campaigns optimize for); <strong>CompReg</strong> = Global pixel (the dual-pixel test arm). Each registration fires both, on two pixels Meta cannot cross-deduplicate, so adding them double-counts. <strong>Paid Leads</strong> = registrations with a real Meta signal (Facebook click ID, or Referral Type Paid/Social); <strong>All Regs</strong> adds the UTM-stripped/organic ones for context. True CPL = Spend / Paid Leads.</p>
+        <p class="section-note">Meta conversions are split by pixel and never summed: <strong>Lead</strong> = Souled pixel (primary event through Jun 30, 2026 — retired at the Jul 1 pixel migration); <strong>CompReg</strong> = Global pixel (primary event from Jul 1, the event campaigns now optimize on). During the dual-pixel overlap each registration fired both, on two pixels Meta cannot cross-deduplicate, so adding them double-counts. <strong>Gap</strong> = primary Meta event (Lead before Jul 1, CompReg after) minus Paid Leads. <strong>Paid Leads</strong> = registrations with a real Meta signal (Facebook click ID, or Referral Type Paid/Social); <strong>All Regs</strong> adds the UTM-stripped/organic ones for context. True CPL = Spend / Paid Leads.</p>
         <div class="table-responsive"><table class="data-table" id="summaryTable"><thead><tr>
             <th onclick="dashboard.sortSummary('period')">Period</th>
             <th onclick="dashboard.sortSummary('spend')" class="text-right">Spend</th>
             <th onclick="dashboard.sortSummary('clicks')" class="text-right">Clicks</th>
             <th onclick="dashboard.sortSummary('cpc')" class="text-right">CPC</th>
             <th onclick="dashboard.sortSummary('ctr')" class="text-right">CTR</th>
-            <th onclick="dashboard.sortSummary('meta_leads_souled')" class="text-right">Lead<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Souled px</span></th>
-            <th onclick="dashboard.sortSummary('meta_leads_global')" class="text-right">CompReg<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Global px (test)</span></th>
+            <th onclick="dashboard.sortSummary('meta_leads_souled')" class="text-right">Lead<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Souled px · pre Jul 1</span></th>
+            <th onclick="dashboard.sortSummary('meta_leads_global')" class="text-right">CompReg<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Global px · Jul 1 →</span></th>
             <th onclick="dashboard.sortSummary('sf_leads')" class="text-right">Paid Leads<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">fbc/Paid/Social</span></th>
             <th onclick="dashboard.sortSummary('sf_leads_all')" class="text-right">All Regs<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">incl. unattributed</span></th>
-            <th onclick="dashboard.sortSummary('lead_gap')" class="text-right">Gap<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Lead−Paid</span></th>
+            <th onclick="dashboard.sortSummary('lead_gap')" class="text-right">Gap<br><span style="font-weight:400;font-size:10px;color:var(--text-secondary)">Meta−Paid</span></th>
             <th onclick="dashboard.sortSummary('true_cpl')" class="text-right">True CPL</th>
             <th onclick="dashboard.sortSummary('conv_rate')" class="text-right">Conv %</th>
         </tr></thead><tbody id="summaryBody"></tbody><tfoot id="summaryFoot"></tfoot></table></div>
@@ -238,6 +238,37 @@
 <script>
 const RAW = {{ data }};
 const COLORS = ['#4361ee','#e71d36','#2ec4b6','#ff9f1c','#8172B3','#937860','#00b894','#6c5ce7','#fd79a8','#636e72'];
+const CUTOVER = RAW.pixel_cutover; // Jul 1 2026 pixel migration (Souled px Lead → Global px CompReg)
+const GAP_MIN_EVENTS = 5;          // keep in sync with GAP_PCT_MIN_EVENTS in refresh_dashboard.py
+
+// Draws a dashed vertical marker at the pixel-migration boundary on any
+// time-series chart whose visible range spans it.
+const cutoverLinePlugin = {
+    id: 'cutoverLine',
+    afterDatasetsDraw(chart) {
+        const labels = chart.data.labels;
+        if (!CUTOVER || !labels || labels.length < 2) return;
+        // Monthly labels are YYYY-MM; daily/weekly are YYYY-MM-DD (week start).
+        const key = labels[0].length === 7 ? CUTOVER.slice(0, 7) : CUTOVER;
+        // First period containing or starting at/after the cutover = the first
+        // label whose successor starts strictly after it (for the last label,
+        // which has no successor, compare the label itself).
+        const idx = labels.findIndex((l, i) => i + 1 < labels.length ? labels[i + 1] > key : l >= key);
+        if (idx <= 0) return; // boundary outside (or at the edge of) the visible range
+        const x = (chart.scales.x.getPixelForValue(idx - 1) + chart.scales.x.getPixelForValue(idx)) / 2;
+        const {top, bottom, right} = chart.chartArea;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = '#6c5ce7'; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#6c5ce7'; ctx.font = '600 10px -apple-system, sans-serif';
+        const flip = x > right - 120;
+        ctx.textAlign = flip ? 'right' : 'left';
+        ctx.fillText('Jul 1: pixel migration', x + (flip ? -5 : 5), top + 10);
+        ctx.restore();
+    }
+};
 
 function fmt$(v) { return '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtN(v) { return Number(v).toLocaleString('en-US', {maximumFractionDigits:0}); }
@@ -316,19 +347,20 @@ class Dashboard {
         const c = rows.reduce((a,r) => a+r.clicks, 0);
         const souled = rows.reduce((a,r) => a+(r.meta_leads_souled||0), 0);
         const glob = rows.reduce((a,r) => a+(r.meta_leads_global||0), 0);
+        const prim = rows.reduce((a,r) => a+(r.meta_leads_primary||0), 0);
         const sl = rows.reduce((a,r) => a+r.sf_leads, 0);
         const slAll = rows.reduce((a,r) => a+(r.sf_leads_all||0), 0);
         const cpl = sl > 0 ? s/sl : 0;
-        const gap = souled > 0 ? ((souled-sl)/souled*100) : 0;
+        const gap = prim >= GAP_MIN_EVENTS ? ((prim-sl)/prim*100) : null;
         document.getElementById('kpi-spend').textContent = fmt$(s);
         document.getElementById('kpi-clicks-sub').textContent = fmtN(c) + ' clicks';
         document.getElementById('kpi-sf-leads').textContent = fmtN(sl);
         document.getElementById('kpi-sf-leads-sub').textContent = fmtN(slAll) + ' total regs · ' + fmtN(slAll - sl) + ' unattributed';
         const cplEl = document.getElementById('kpi-cpl');
         cplEl.textContent = fmt$(cpl); cplEl.className = 'kpi-value ' + cplClass(cpl);
-        document.getElementById('kpi-meta-leads').textContent = fmtN(souled);
-        document.getElementById('kpi-meta-leads-sub').textContent = '+ ' + fmtN(glob) + ' Global CompReg (test)';
-        document.getElementById('kpi-gap').textContent = fmtPct(gap);
+        document.getElementById('kpi-meta-leads').textContent = fmtN(prim);
+        document.getElementById('kpi-meta-leads-sub').textContent = fmtN(souled) + ' Souled px Lead · ' + fmtN(glob) + ' Global px CompReg';
+        document.getElementById('kpi-gap').textContent = gap === null ? '—' : fmtPct(gap);
         document.getElementById('kpi-coach').textContent = funnel.coach_match_rate + '%';
     }
 
@@ -355,7 +387,8 @@ class Dashboard {
                 responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
                 plugins:{legend:{position:'top',labels:{usePointStyle:true,padding:15}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt$(ctx.parsed.y)}}},
                 scales:{y:{position:'left',title:{display:true,text:'Spend ($)'},grid:{color:'#f0f0f0'},ticks:{callback:v=>v>=1000?'$'+(v/1000).toFixed(0)+'K':'$'+v}},y1:{position:'right',title:{display:true,text:'CPL ($)'},grid:{drawOnChartArea:false},ticks:{callback:v=>'$'+v}},x:{grid:{display:false}}}
-            }
+            },
+            plugins: [cutoverLinePlugin]
         });
 
         // Lead gap — three bars: Souled campaign leads, Global Pixel leads, SF confirmed
@@ -363,15 +396,16 @@ class Dashboard {
         this.charts.leadGap = new Chart(document.getElementById('chartLeadGap'), {
             type:'bar',
             data: { labels, datasets: [
-                { label:'Souled Leads (Lead)', data:souledL, backgroundColor:'rgba(255,159,28,0.7)', borderRadius:3 },
-                { label:'Global Pixel Leads (CompleteReg)', data:globalL, backgroundColor:'rgba(255,99,99,0.7)', borderRadius:3 },
+                { label:'Meta Lead (Souled px · pre Jul 1)', data:souledL, backgroundColor:'rgba(255,159,28,0.7)', borderRadius:3 },
+                { label:'Meta CompleteReg (Global px · Jul 1 →)', data:globalL, backgroundColor:'rgba(255,99,99,0.7)', borderRadius:3 },
                 { label:'Paid Leads (SF)', data:sfL, backgroundColor:'rgba(46,196,182,0.7)', borderRadius:3 }
             ]},
             options: {
                 responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
                 plugins:{legend:{position:'top',labels:{usePointStyle:true,padding:15}}},
                 scales:{y:{beginAtZero:true,grid:{color:'#f0f0f0'}},x:{grid:{display:false}}}
-            }
+            },
+            plugins: [cutoverLinePlugin]
         });
 
         // Conv rate
@@ -383,7 +417,8 @@ class Dashboard {
                 responsive:true, maintainAspectRatio:false,
                 plugins:{legend:{display:false}},
                 scales:{y:{beginAtZero:true,title:{display:true,text:'%'},grid:{color:'#f0f0f0'}},x:{grid:{display:false}}}
-            }
+            },
+            plugins: [cutoverLinePlugin]
         });
     }
 
@@ -544,14 +579,15 @@ class Dashboard {
         if (this.charts.recon) this.charts.recon.destroy();
         this.charts.recon = new Chart(document.getElementById('chartReconciliation'), {
             data: { labels, datasets: [
-                { type:'bar', label:'Lead Gap (Souled px Lead − SF)', data:gaps, backgroundColor:gaps.map(g=>g>=0?'rgba(255,159,28,0.7)':'rgba(46,196,182,0.7)'), borderRadius:3, yAxisID:'y', order:2 },
+                { type:'bar', label:'Lead Gap (Meta primary − SF)', data:gaps, backgroundColor:gaps.map(g=>g>=0?'rgba(255,159,28,0.7)':'rgba(46,196,182,0.7)'), borderRadius:3, yAxisID:'y', order:2 },
                 { type:'line', label:'Gap %', data:gapPcts, borderColor:'#e71d36', borderWidth:2, pointRadius:3, tension:0.3, yAxisID:'y1', order:1 }
             ]},
             options: {
                 responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
                 plugins:{legend:{position:'top',labels:{usePointStyle:true,padding:15}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(ctx.datasetIndex===0?fmtN(ctx.parsed.y):fmtPct(ctx.parsed.y))}}},
                 scales:{y:{title:{display:true,text:'Lead Gap (#)'},grid:{color:'#f0f0f0'}},y1:{position:'right',title:{display:true,text:'Gap %'},grid:{drawOnChartArea:false}},x:{grid:{display:false}}}
-            }
+            },
+            plugins: [cutoverLinePlugin]
         });
     }
 
