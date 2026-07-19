@@ -183,6 +183,8 @@ def load_meta_country():
     rows = data["result"]
     df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"])
+    if "country" in df.columns:
+        df["country"] = df["country"].fillna("Unknown")
     for col in ["spend", "clicks", "impressions", "actions_lead", "actions_complete_registration"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
