@@ -22,6 +22,8 @@ import json
 import os
 import time
 
+import re
+
 import requests
 
 GRAPH_VERSION = "v25.0"
@@ -31,6 +33,11 @@ PAGE_LIMIT = 500
 ASYNC_POLL_SECS = 6
 ASYNC_MAX_POLLS = 100  # ~10 min ceiling
 _BASE = f"https://graph.facebook.com/{GRAPH_VERSION}"
+
+
+def _redact(text):
+    """Strip access_token from anything we log (requests embeds the URL in errors)."""
+    return re.sub(r"access_token=[^&\s'\"]+", "access_token=<redacted>", str(text))
 
 # Windsor field -> the action array + action_type to read it from.
 _ACTION_MAP = {
@@ -125,7 +132,7 @@ def _request_with_retry(url, params):
             last_err = e
         if attempt < META_RETRIES:
             backoff = 10 * (2 ** (attempt - 1))  # 10, 20, 40, 80s
-            print(f"  Meta fetch attempt {attempt} throttled/failed ({last_err}); retry in {backoff}s...")
+            print(f"  Meta fetch attempt {attempt} transient ({_redact(last_err)}); retry in {backoff}s...")
             time.sleep(backoff)
     raise last_err
 
@@ -150,21 +157,33 @@ def _fetch_async(account, params, fields, token):
     Meta's async report jobs are the supported path. POST to create the run, poll
     until complete, then page the report_run_id/insights edge."""
     run = None
+    last = "no response"
     for attempt in range(1, META_RETRIES + 1):
         r = requests.post(f"{_BASE}/{account}/insights", data=params, timeout=(30, META_TIMEOUT))
         if r.status_code == 200:
             run = r.json()
             break
+        try:
+            err = r.json().get("error", {})
+        except ValueError:
+            err = {"message": r.text[:200]}
+        last = f"HTTP {r.status_code}: {err}"
+        transient = (r.status_code in (429, 500, 502, 503)
+                     or err.get("code") in (1, 2, 4, 17, 32, 613)
+                     or err.get("is_transient"))
+        if not transient:
+            raise RuntimeError(f"async job creation failed ({last})")
         if attempt < META_RETRIES:
             time.sleep(10 * (2 ** (attempt - 1)))
     if not run or "report_run_id" not in run:
-        raise RuntimeError(f"async job creation failed: {run}")
+        raise RuntimeError(f"async job creation failed after retries ({last})")
     run_id = run["report_run_id"]
 
     for _ in range(ASYNC_MAX_POLLS):
         time.sleep(ASYNC_POLL_SECS)
-        st = requests.get(f"{_BASE}/{run_id}", params={"access_token": token},
-                          timeout=(30, META_TIMEOUT)).json()
+        # Route through the retry wrapper: a single transient 5xx / non-JSON body
+        # during the up-to-10-min poll must not abort the whole daily refresh.
+        st = _request_with_retry(f"{_BASE}/{run_id}", {"access_token": token})
         status = st.get("async_status")
         if status == "Job Completed":
             break
@@ -198,8 +217,13 @@ def fetch(fields, date_from, date_to, account_id=None):
         params["breakdowns"] = "country"
 
     url = f"{_BASE}/{account}/insights"
+    # Ad-level (creative) pulls are too large for the sync endpoint — Meta returns
+    # code 2 / subcode 1504044 deterministically — so go straight to the async
+    # report job instead of burning ~150s on doomed sync retries.
+    if params["level"] == "ad":
+        return _fetch_async(account, params, fields, token)
     try:
         return _collect(url, params, fields)
     except Exception as e:
-        print(f"  sync fetch failed ({e}); falling back to async report job...")
+        print(f"  sync fetch unavailable ({_redact(e)}); falling back to async report job...")
         return _fetch_async(account, params, fields, token)
