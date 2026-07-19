@@ -1,10 +1,11 @@
 """
 Souled Meta Ads CPL Dashboard Generator
-Reads cached JSON data from Windsor.ai (Meta) and Salesforce,
+Reads cached JSON data from the Meta Marketing API and Salesforce,
 merges them, computes CPL metrics, and generates a self-contained HTML dashboard.
 
-Run with --fetch to pull live data from Windsor.ai REST API + Salesforce
-(requires WINDSOR_API_KEY, SF_USERNAME, SF_PASSWORD, SF_SECURITY_TOKEN env vars).
+Run with --fetch to pull live data from the Meta Marketing API + Salesforce
+(requires FACEBOOK_ADS_TOKEN, FACEBOOK_AD_ACCOUNT_ID, SF_CONSUMER_KEY,
+SF_USERNAME, SF_PRIVATE_KEY env vars). Meta data is fetched via meta_direct.py.
 """
 import argparse
 import json
@@ -12,14 +13,13 @@ import os
 import time
 import requests
 import pandas as pd
+import meta_direct
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
 
-# Windsor.ai connectors.windsor.ai can be slow to respond for the heaviest
-# breakdowns (adset/creative produce thousands of rows). Give each call a
-# generous read timeout and retry transient timeouts/5xx with backoff.
-WINDSOR_TIMEOUT = 300
-WINDSOR_RETRIES = 4
+# Transient network blips (Meta API paging, Salesforce auth) get retried with
+# backoff. Meta throttle/pagination handling lives in meta_direct.py.
+FETCH_RETRIES = 4
 
 # 2026-07-01 pixel migration: Souled campaigns moved off the Souled pixel
 # (Lead event) onto the Olami Global pixel, optimizing on CompleteRegistration.
@@ -36,48 +36,11 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 OUTPUT_FILE = os.path.join(BASE_DIR, "dashboard.html")
 
 
-def _windsor_fetch(fields, date_from, date_to):
-    """Call Windsor.ai REST API and return list of records."""
-    api_key = os.environ["WINDSOR_API_KEY"]
-    params = {
-        "api_key": api_key,
-        "date_from": date_from,
-        "date_to": date_to,
-        "fields": ",".join(fields),
-        "account_id": "548376353109705",
-    }
-    last_err = None
-    for attempt in range(1, WINDSOR_RETRIES + 1):
-        try:
-            resp = requests.get(
-                "https://connectors.windsor.ai/facebook",
-                params=params,
-                timeout=(30, WINDSOR_TIMEOUT),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            # Windsor REST API returns {"data": [...]} or {"result": [...]}
-            return data.get("data") or data.get("result") or []
-        except (requests.exceptions.Timeout,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.HTTPError) as e:
-            # Only retry transient server-side conditions; re-raise 4xx immediately.
-            status = getattr(getattr(e, "response", None), "status_code", None)
-            if status is not None and 400 <= status < 500:
-                raise
-            last_err = e
-            if attempt < WINDSOR_RETRIES:
-                backoff = 5 * (2 ** (attempt - 1))  # 5s, 10s, 20s
-                print(f"  Windsor fetch attempt {attempt} failed ({e}); retrying in {backoff}s...")
-                time.sleep(backoff)
-    raise last_err
-
-
 def fetch_and_save_meta_data():
-    """Fetch all three Meta datasets from Windsor.ai REST API and save to data/."""
+    """Fetch all Meta datasets from the Meta Marketing API and save to data/."""
     date_from = (datetime.now() - timedelta(days=183)).strftime("%Y-%m-%d")
     date_to = datetime.now().strftime("%Y-%m-%d")
-    print(f"Fetching Meta data {date_from} → {date_to} from Windsor.ai REST API...")
+    print(f"Fetching Meta data {date_from} → {date_to} from the Meta Marketing API...")
 
     daily_fields = ["date", "campaign", "spend", "clicks", "link_clicks", "impressions",
                     "cpc", "ctr", "actions_lead", "actions_complete_registration",
@@ -96,7 +59,7 @@ def fetch_and_save_meta_data():
         (creative_fields, "meta_creative.json"),
         (adset_fields, "meta_adset.json"),
     ]:
-        records = _windsor_fetch(fields, date_from, date_to)
+        records = meta_direct.fetch(fields, date_from, date_to)
         path = os.path.join(DATA_DIR, filename)
         with open(path, "w") as f:
             json.dump({"result": records}, f)
@@ -131,14 +94,14 @@ def fetch_and_save_sf_data():
     # doesn't fail the whole refresh.
     last_err = None
     result = None
-    for attempt in range(1, WINDSOR_RETRIES + 1):
+    for attempt in range(1, FETCH_RETRIES + 1):
         try:
             result = _sf_query_registrations(Salesforce)
             break
         except (requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError) as e:
             last_err = e
-            if attempt < WINDSOR_RETRIES:
+            if attempt < FETCH_RETRIES:
                 backoff = 5 * (2 ** (attempt - 1))
                 print(f"  SF fetch attempt {attempt} failed ({e}); retrying in {backoff}s...")
                 time.sleep(backoff)
@@ -256,7 +219,7 @@ def load_meta_adset():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["meta_conversions"] = df.get("actions_complete_registration", 0) + df.get("actions_lead", 0)
-    # Normalize Windsor field name → internal name
+    # Normalize Meta/legacy field name → internal name
     if "adset_name" in df.columns and "adset" not in df.columns:
         df = df.rename(columns={"adset_name": "adset"})
     return _exclude_today(df)
@@ -598,7 +561,7 @@ def main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--fetch", action="store_true",
-                        help="Fetch live data from Windsor.ai + Salesforce before generating")
+                        help="Fetch live data from the Meta Marketing API + Salesforce before generating")
     args = parser.parse_args()
     if args.fetch:
         fetch_and_save_meta_data()
