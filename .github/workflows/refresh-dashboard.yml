@@ -1,12 +1,11 @@
 name: Refresh Dashboard
 
 on:
-  schedule:
-    # 4 AM UTC = 7 AM Israel time during IDT (UTC+3, summer), daily.
-    # GitHub Actions cron is UTC-only and does not follow DST — when Israel
-    # falls back to IST (UTC+2, ~late Oct–late Mar) this fires at 6 AM Israel.
-    - cron: '0 4 * * *'
-  workflow_dispatch: # allow manual trigger from GitHub UI
+  # No GitHub schedule. The daily 04:00 UTC run is started by Google Cloud
+  # Scheduler job `bina-job-cpl-dashboard` (project olami-services), which
+  # dispatches this workflow on time. GitHub's own cron drifted 5-7 hours and
+  # made the dashboard rebuild twice a day; removed 2026-09-30.
+  workflow_dispatch: # Cloud Scheduler, Bina's "Run now", or the GitHub UI
 
 # Serialize runs: a manual "Run Now" while another run is going (or two
 # clicks in quick succession) would otherwise both fetch + commit and race
